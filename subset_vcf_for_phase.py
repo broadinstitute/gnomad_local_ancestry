@@ -28,12 +28,12 @@ def subset_and_export_chr_vcfs(
     :param gt_expr: Boolean of GT expression in MT. Defaults to "LGT".
     """
     logger.info(f"Running script on {contigs}...")
-    mt = hl.read_matrix_table(mt_path)
+    whole_mt = hl.read_matrix_table(mt_path)
     for contig in contigs:
         contig = f"chr{contig}"
         logger.info(f"Subsetting {contig}...")
         mt = hl.filter_intervals(
-            mt, [hl.parse_locus_interval(contig, reference_genome="GRCh38")]
+            whole_mt, [hl.parse_locus_interval(contig, reference_genome="GRCh38")]
         )
         mt = subset_samples_and_variants(
             mt, sample_path=samples_path, sparse=sparse, gt_expr=gt_expr
