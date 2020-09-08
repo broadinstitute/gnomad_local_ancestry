@@ -53,7 +53,7 @@ def subset_and_export_chr_vcfs(
         mt = filter_rows_for_qc(mt, min_callrate=0.9, min_af=0.001)
 
         mt = mt.checkpoint(
-            f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.mt", overwrite=True
+            f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.mt",  _read_if_exists=True
         )
         logger.info(f"Subsetted {contig} to {mt.rows().count()} variants and {mt.cols().count()} samples")
         hl.export_vcf(
