@@ -9,6 +9,7 @@ logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
 def subset_and_export_chr_vcfs(
     mt_path: str,
     samples_path: str,
@@ -17,7 +18,7 @@ def subset_and_export_chr_vcfs(
     sparse: bool = True,
     gt_expr: str = "LGT",
     min_callrate: float = 0.9,
-    min_af: float = 0.001
+    min_af: float = 0.001,
 ) -> hl.MatrixTable:
     """
     Subset a matrix table to specified samples and across specified contigs, filter
@@ -44,7 +45,7 @@ def subset_and_export_chr_vcfs(
         )
 
         if sparse:
-            mt = mt.key_rows_by('locus', 'alleles')
+            mt = mt.key_rows_by("locus", "alleles")
             mt = hl.experimental.sparse_split_multi(mt, filter_changed_loci=True)
             mt = hl.experimental.densify(mt)
             mt = mt.filter_rows(hl.len(mt.alleles) > 1).drop(
@@ -54,13 +55,18 @@ def subset_and_export_chr_vcfs(
             mt = hl.split_multi_hts(mt)
 
         mt = mt.filter_rows(hl.agg.any(mt.GT.is_non_ref()))
-        logger.info(f"Filtering to variants with greater than {min_callrate} callrate and {min_af} allele frequency")
+        logger.info(
+            f"Filtering to variants with greater than {min_callrate} callrate and {min_af} allele frequency"
+        )
         mt = filter_rows_for_qc(mt, min_callrate=min_callrate, min_af=min_af)
 
         mt = mt.checkpoint(
-            f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.mt", _read_if_exists=True
+            f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.mt",
+            _read_if_exists=True,
         )
-        logger.info(f"Subsetted {contig} to {mt.rows().count()} variants and {mt.cols().count()} samples")
+        logger.info(
+            f"Subsetted {contig} to {mt.rows().count()} variants and {mt.cols().count()} samples"
+        )
         hl.export_vcf(
             mt, f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.vcf.bgz"
         )
@@ -72,13 +78,30 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mt-path", help="MatrixTable to subset from", required=True)
     parser.add_argument("--samples-path", help="TSV of samples")
-    parser.add_argument("--output-bucket", help="Bucket for MTs and VCFs", required=True)
-    parser.add_argument("--sparse", help="Whether MT is sparse. Defaults to True", action="store_true")
-    parser.add_argument("--gt-expr", help="Genotype expression, typically 'LGT' is for sparse MTs while 'GT' for dense.", default="LGT")
-    parser.add_argument("--min-callrate", help="Minimum callrate threshiold as float for variant QC", type=float)
-    parser.add_argument("--min-af", help="Minimum allele frequency as float for variant QC", type=float)
     parser.add_argument(
-        "--contigs", nargs="+", help="Integer contigs to run subsetting on", required=True
+        "--output-bucket", help="Bucket for MTs and VCFs", required=True
+    )
+    parser.add_argument(
+        "--sparse", help="Whether MT is sparse. Defaults to True", action="store_true"
+    )
+    parser.add_argument(
+        "--gt-expr",
+        help="Genotype expression, typically 'LGT' is for sparse MTs while 'GT' for dense.",
+        default="LGT",
+    )
+    parser.add_argument(
+        "--min-callrate",
+        help="Minimum callrate threshiold as float for variant QC",
+        type=float,
+    )
+    parser.add_argument(
+        "--min-af", help="Minimum allele frequency as float for variant QC", type=float
+    )
+    parser.add_argument(
+        "--contigs",
+        nargs="+",
+        help="Integer contigs to run subsetting on",
+        required=True,
     )
     args = parser.parse_args()
     subset_and_export_chr_vcfs(
@@ -89,5 +112,5 @@ if __name__ == "__main__":
         sparse=args.sparse,
         gt_expr=args.gt_expr,
         min_callrate=args.min_callrate,
-        min_af=args.min_af
+        min_af=args.min_af,
     )
