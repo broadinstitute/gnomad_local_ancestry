@@ -16,16 +16,20 @@ def subset_and_export_chr_vcfs(
     contigs: list,
     sparse: bool = True,
     gt_expr: str = "LGT",
+    min_callrate: float = 0.9,
+    min_af: float = 0.001
 ) -> hl.MatrixTable:
     """
     Subset a matrix table to specified samples and across specified contigs, filter
     on min_callrate of 0.9 and min_af of 0.001, then export each subsetted contig individually
     :param mt: Path to atrixTable to subset from.
-    :param samples_path: Path to tsv of sample IDs with header "s".
+    :param samples_path: Path to tsv of sample IDs with header 's'.
     :param output_bucket: Path to output bucket for contig MT and VCF.
     :param contigs: List of contigs as integers.
     :param sparse: Boolean of whether source MT is sparse. Defaults to True.
-    :param gt_expr: Boolean of GT expression in MT. Defaults to "LGT".
+    :param gt_expr: Boolean of GT expression in MT. Defaults to 'LGT'.
+    :param min_callrate: Minimum variant callrate for variant QC.
+    :param min_af: Minimum allele frequency for variant QC.
     """
     logger.info(f"Running script on {contigs}...")
     whole_mt = hl.read_matrix_table(mt_path)
@@ -50,10 +54,11 @@ def subset_and_export_chr_vcfs(
             mt = hl.split_multi_hts(mt)
 
         mt = mt.filter_rows(hl.agg.any(mt.GT.is_non_ref()))
-        mt = filter_rows_for_qc(mt, min_callrate=0.9, min_af=0.001)
+        logger.info(f"Filtering to variants with greater than {min_callrate} callrate and {min_af} allele frequency")
+        mt = filter_rows_for_qc(mt, min_callrate=min_callrate, min_af=min_af)
 
         mt = mt.checkpoint(
-            f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.mt",  _read_if_exists=True
+            f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.mt", _read_if_exists=True
         )
         logger.info(f"Subsetted {contig} to {mt.rows().count()} variants and {mt.cols().count()} samples")
         hl.export_vcf(
@@ -70,6 +75,8 @@ if __name__ == "__main__":
     parser.add_argument("--output-bucket", help="Bucket for MTs and VCFs", required=True)
     parser.add_argument("--sparse", help="Whether MT is sparse. Defaults to True", action="store_true")
     parser.add_argument("--gt-expr", help="Genotype expression, typically 'LGT' is for sparse MTs while 'GT' for dense.", default="LGT")
+    parser.add_argument("--min-callrate", help="Minimum callrate threshiold as float for variant QC", type=float)
+    parser.add_argument("--min-af", help="Minimum allele frequency as float for variant QC", type=float)
     parser.add_argument(
         "--contigs", nargs="+", help="Integer contigs to run subsetting on", required=True
     )
@@ -81,4 +88,6 @@ if __name__ == "__main__":
         contigs=args.contigs,
         sparse=args.sparse,
         gt_expr=args.gt_expr,
+        min_callrate=args.min_callrate,
+        min_af=args.min_af
     )
