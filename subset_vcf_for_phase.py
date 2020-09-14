@@ -93,9 +93,13 @@ if __name__ == "__main__":
         "--min-callrate",
         help="Minimum callrate threshiold as float for variant QC",
         type=float,
+        default=0.9,
     )
     parser.add_argument(
-        "--min-af", help="Minimum allele frequency as float for variant QC", type=float
+        "--min-af",
+        help="Minimum allele frequency as float for variant QC",
+        type=float,
+        default=0.001,
     )
     parser.add_argument(
         "--contigs",
