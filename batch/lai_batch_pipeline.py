@@ -17,6 +17,55 @@ GCLOUD_USER_ACCOUNT = "mwilson@broadinstitute.org"
 GCLOUD_CREDENTIALS_LOCATION = "gs://seqr-mwilson-misc/"
 
 
+def check_args(parser, args):
+    """
+    Check passed args to ensure pipeline can run properly.
+
+    :param parser: arg parser.
+    :param args: Arg's from argparser.
+    """
+    if not (args.run_eagle or args.run_rfmix or args.run_tractor):
+        parser.error(
+            "Need to specify at least one tool to run (--run-eagle, --run-rfmix, and/or --run-tractor)"
+        )
+    if args.run_eagle:
+        if not (args.sample_vcf or args.ref_vcf):
+            parser.error(
+                "Need to specify either sample and/or reference vcfs (--sample-vcf or --ref-vcf)"
+            )
+    if args.run_rfmix:
+        if not ((args.run_eagle and args.sample_vcf) or args.phased_sample_vcf):
+            parser.error(
+                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)"
+            )
+        if not ((args.run_eagle and args.ref_vcf) or args.phased_ref_vcf):
+            parser.error(
+                "Need to specify either reference vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --reference-vcf or --phased-reference-vcf)"
+            )
+        if not args.genetic_map:
+            parser.error(
+                "Need to specify genetic recombination map, --genetic-map, for RFMix to run."
+            )
+        if not args.pop_sample_map:
+            parser.error(
+                "Need to specify sample to population mapping file, --pop-sample-map"
+            )
+
+    if args.run_tractor:
+        if not ((args.run_eagle and args.sample_vcf) or args.phased_sample_vcf):
+            parser.error(
+                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)"
+            )
+        if not args.run_rfmix and not args.msp_file:
+            parser.error(
+                "Need to run RFMix to generate MSP file or pass the MSP tsv file to the script, --msp-file."
+            )
+        if not args.ancs:
+            parser.error(
+                "Need to specify either number of continental ancestries within RFMix and phased sample VCF."
+            )
+
+
 def eagle(
     batch,
     vcf,
@@ -282,6 +331,7 @@ if __name__ == "__main__":
         type=int,
     )
     args = p.parse_args()
+    check_args(args)
 
     if args.slack_channel:
         from slack_creds import slack_token
