@@ -69,13 +69,30 @@ def rfmix(
     threads=8,
     image="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
 ) -> hb.Batch.new_job:
+    """
+    Run RFMix2 on phased VCF.
+
+    :param batch: [description]
+    :param sample_pvcf: [description]
+    :param ref_pvcf: [description]
+    :param contig: [description]
+    :param sample_map: [description]
+    :param rf_genetic_map: [description]
+    :param mem: [description], defaults to "standard"
+    :param storage: [description], defaults to "50G"
+    :param threads:
+    :param image: [description], defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest"
+    :return: [description]
+    :rtype: hb.Batch.new_job
+    """
     r = batch.new_job(name=f"RFMix - chr{contig}")
     r.memory(mem)
     r.storage(storage)
     r.cpu(threads)
-   # r.depends_on(depends_on_job) #Python doesn't like this, find how to get around it
     r.image(image)
-    r.declare_resource_group(ofile={"msp": "{root}.msp.tsv", "fb": "{root}.fb.tsv"})
+    r.declare_resource_group(
+        ofile={"msp.tsv": "{root}.msp.tsv", "fb.tsv": "{root}.fb.tsv"}
+    )
     cmd = f"""
     ./rfmix/rfmix \
         -f {sample_pvcf} \
@@ -92,28 +109,50 @@ def rfmix(
     return r
 
 
-def tractor(batch, msp, vcf, ancs, zipped, contig, mem="standard",
+def tractor(
+    batch,
+    msp,
+    vcf,
+    ancs,
+    zipped,
+    contig,
+    mem="standard",
     storage="50G",
-    image="gcr.io/broad-mpg-gnomad/lai_tractor:latest",):
+    image="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
+) -> hb.Batch.new_job:
+    """
+    Run Tractor's ExtractTract.py script.
+
+    :param batch: [description]
+    :param msp: [description]
+    :param vcf: [description]
+    :param ancs: [description]
+    :param zipped: [description]
+    :param contig: [description]
+    :param mem: [description], defaults to "standard"
+    :param storage: [description], defaults to "50G"
+    :param image: [description], defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest"
+    :return: [description]
+    :rtype: hb.Batch.new_job
+    """
     t = batch.new_job(name=f"Tractor - chr{contig}")
     t.storage(storage)
     t.image(image)
     t.memory(mem)
-   
+
     rg_def = {}
     for i in range(ancs):
-        rg_def[f'vcf{i}'] = f'{{root}}.anc{i}.vcf'
-        rg_def[f'dos{i}'] = f'{{root}}.anc{i}.dosage.txt'
-        rg_def[f'ancdos{i}'] = f'{{root}}.anc{i}.hapcount.txt'
+        rg_def[f"vcf{i}"] = f"{{root}}.anc{i}.vcf"
+        rg_def[f"dos{i}.txt"] = f"{{root}}.anc{i}.dosage.txt"
+        rg_def[f"ancdos{i}.txt"] = f"{{root}}.anc{i}.hapcount.txt"
 
     t.declare_resource_group(ofile=rg_def)
-
-    zipped="--zipped" if zipped else ""
-    cmd = f'''
+    zipped = "--zipped" if zipped else ""
+    cmd = f"""
         python3 Tractor/ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={ancs} {zipped} --output-path={t.ofile}
-        '''
+        """
     t.command(cmd)
-    t.command(f'ls -l {t.ofile}*')
+    t.command(f"ls -l {t.ofile}*")
     return t
 
 
@@ -146,13 +185,33 @@ def run_lai(args):
             else:
                 phased_ref_vcf = ref_e.ofile
             if args.phased_sample_vcf:
-                phased_sample_vcf=b.read_input(args.phased_sample_vcf)
+                phased_sample_vcf = b.read_input(args.phased_sample_vcf)
             else:
-                phased_sample_vcf=e.ofile.vcf
+                phased_sample_vcf = e.ofile.vcf
 
-            r = rfmix(b, phased_sample_vcf, phased_ref_vcf, contig, sample_map, genetic_map)
+            r = rfmix(
+                b, phased_sample_vcf, phased_ref_vcf, contig, sample_map, genetic_map
+            )
             b.write_output(r.ofile, dest=f"{output_path}rfmix/output/lai_chr20_amr")
-        
+
+        if args.run_tractor:
+            if args.phased_sample_vcf:
+                phased_sample_vcf = b.read_input_group(
+                    **{"vcf.gz": args.phased_sample_vcf}
+                )
+            else:
+                phased_sample_vcf = e.ofile.vcf
+            if args.msp_file :
+                msp_file = b.read_input_group(
+                    **{"msp.tsv": args.msp_file}
+                )
+            else:
+                msp_file = r.ofile
+            t = tractor(
+                b, msp_file, phased_sample_vcf, args.ancs, zipped=True, contig=contig
+            )
+            b.write_output(t.ofile, dest=f"{output_path}tractor/output/chr20_amr2_11s")
+
 
 if __name__ == "__main__":
     p = init_arg_parser(
@@ -173,17 +232,38 @@ if __name__ == "__main__":
     )
     p.add_argument("--run-rfmix", action="store_true", help="Whether to run RFMix2.")
     p.add_argument(
-        "--genetic-map", required=False, help="Genetic map for required for RFMix2.", default="gs://gnomad-batch/mwilson/lai/inputs/rfmix/genetic_map_hg38.txt"
+        "--genetic-map",
+        required=False,
+        help="Genetic map for required for RFMix2.",
+        default="gs://gnomad-batch/mwilson/lai/inputs/rfmix/genetic_map_hg38.txt",
     )
     p.add_argument("--pop-sample-map", help="Sample population mapping for RFMix2.")
     p.add_argument("--contig", required=True, help="Chromosomes to run LAI on.")
     p.add_argument(
         "--slack-channel", help="Slack channel to send job status to, needs @ for DM."
     )
-    p.add_argument("--phased-ref-vcf", help="Phased reference VCF, if supplied, will not re-run phasing.")
-    p.add_argument("--run-eagle", action="store_true", help="Whether to run eagle to phase samples.")
+    p.add_argument(
+        "--phased-ref-vcf",
+        help="Phased reference VCF, if supplied, will not re-run phasing.",
+    )
+    p.add_argument(
+        "--run-eagle",
+        action="store_true",
+        help="Whether to run eagle to phase samples.",
+    )
     p.add_argument("--phased-sample-vcf", help="VCF of phased samples.")
-
+    p.add_argument(
+        "--run-tractor",
+        action="store_true",
+        help="Run Tractor's ExtractTracts.py script.",
+    )
+    p.add_argument("--msp-file", help="Output from LAI program like RFMix2.")
+    p.add_argument(
+        "--ancs",
+        help="Number of ancestries within the reference panel. Used to extract ancestry tracts from phased VCF in Tractor.",
+        default=3,
+        type=int,
+    )
     args = p.parse_args()
 
     if args.slack_channel:
@@ -191,4 +271,3 @@ if __name__ == "__main__":
             run_lai(args)
     else:
         run_lai(args)
-
