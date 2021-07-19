@@ -1,11 +1,10 @@
+# noqa: D100
 import logging
 import hailtop.batch as hb
 
 from gnomad.utils.slack import slack_notifications
 from batch.batch_utils import (
     init_arg_parser,
-    init_job,
-    print_memory_stats,
     run_batch,
 )
 
@@ -157,6 +156,7 @@ def tractor(
 
 
 def run_lai(args):
+    """Run batch LAI pipeline."""
     contig = args.contig
     logger.info(f"Running gnomAD LAI on chr{contig}")
     with run_batch(args, f"LAI - chr{contig}") as b:
