@@ -32,8 +32,11 @@ def eagle(
 
     :param batch: Hail batch
     :param vcf: VCF to phase
-    :param contig: Which chromosome the VCF contains
-    :param threads: The number of threads, should match the number of CPUs requested, defaults to 16
+    :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param mem: Hail batch job memory, defaults to "standard".
+    :param storage: Hail batch job storage, deaults to "50G".
+    :param threads: The number of threads, should match the number of CPUs requested, defaults to 8.
+    :param image: Docker image for eagle job, defaults to "gcr.io/broad-mpg-gnomad/lai_phasing:latest".
     :return: Batch job
     """
     e = batch.new_job(name=f"Eagle - chr{contig}")
@@ -71,18 +74,17 @@ def rfmix(
     """
     Run RFMix2 on phased VCF.
 
-    :param batch: [description]
-    :param sample_pvcf: [description]
-    :param ref_pvcf: [description]
-    :param contig: [description]
-    :param sample_map: [description]
-    :param rf_genetic_map: [description]
-    :param mem: [description], defaults to "standard"
-    :param storage: [description], defaults to "50G"
-    :param threads:
-    :param image: [description], defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest"
-    :return: [description]
-    :rtype: hb.Batch.new_job
+    :param batch: Hail batch object
+    :param sample_pvcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
+    :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or ShapeIt.
+    :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
+    :param rf_genetic_map: HapMap genetic map from SNP base pair positions to genetic coordinates in cM.
+    :param mem: Hail batch job memory, defaults to "standard".
+    :param storage: Hail batch job storage, deaults to "50G".
+    :param threads: The number of threads, should match the number of CPUs requested, defaults to 8.
+    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest"
+    :return: Hail batch job
     """
     r = batch.new_job(name=f"RFMix - chr{contig}")
     r.memory(mem)
@@ -122,17 +124,16 @@ def tractor(
     """
     Run Tractor's ExtractTract.py script.
 
-    :param batch: [description]
-    :param msp: [description]
-    :param vcf: [description]
-    :param ancs: [description]
-    :param zipped: [description]
-    :param contig: [description]
-    :param mem: [description], defaults to "standard"
-    :param storage: [description], defaults to "50G"
-    :param image: [description], defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest"
-    :return: [description]
-    :rtype: hb.Batch.new_job
+    :param batch: Hail batch object
+    :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
+    :param vcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
+    :param ancs: Number of ancestral population within the MSP file.
+    :param zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
+    :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param mem: Hail batch job memory, defaults to "standard".
+    :param storage: Hail batch job storage, deaults to "50G".
+    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest"
+    :return: Hail Batch job
     """
     t = batch.new_job(name=f"Tractor - chr{contig}")
     t.storage(storage)
@@ -200,10 +201,8 @@ def run_lai(args):
                 )
             else:
                 phased_sample_vcf = e.ofile.vcf
-            if args.msp_file :
-                msp_file = b.read_input_group(
-                    **{"msp.tsv": args.msp_file}
-                )
+            if args.msp_file:
+                msp_file = b.read_input_group(**{"msp.tsv": args.msp_file})
             else:
                 msp_file = r.ofile
             t = tractor(
@@ -219,7 +218,9 @@ if __name__ == "__main__":
         default_temp_bucket="gnomad-batch",
     )
     p.add_argument(
-        "--sample-vcf", required=True, help="Google bucket path to sample VCF to phase."
+        "--sample-vcf",
+        required=False,
+        help="Google bucket path to sample VCF to phase.",
     )
     p.add_argument(
         "--ref-vcf",
@@ -227,38 +228,55 @@ if __name__ == "__main__":
         help="Google bucket path reference VCF to phase if separate.",
     )
     p.add_argument(
-        "--output-bucket", required=True, help="Google bucket path for results."
+        "--output-bucket",
+        required=True,
+        help="Google bucket path for results. Each tool will create a subfolder here.",
     )
-    p.add_argument("--run-rfmix", action="store_true", help="Whether to run RFMix2.")
+    p.add_argument(
+        "--run-rfmix",
+        required=False,
+        action="store_true",
+        help="Whether to run RFMix2.",
+    )
     p.add_argument(
         "--genetic-map",
         required=False,
         help="Genetic map for required for RFMix2.",
         default="gs://gnomad-batch/mwilson/lai/inputs/rfmix/genetic_map_hg38.txt",
     )
-    p.add_argument("--pop-sample-map", help="Sample population mapping for RFMix2.")
+    p.add_argument(
+        "--pop-sample-map", required=False, help="Sample population mapping for RFMix2."
+    )
     p.add_argument("--contig", required=True, help="Chromosomes to run LAI on.")
     p.add_argument(
-        "--slack-channel", help="Slack channel to send job status to, needs @ for DM."
+        "--slack-channel",
+        required=False,
+        help="Slack channel to send job status to, needs @ for DM.",
     )
     p.add_argument(
         "--phased-ref-vcf",
+        required=False,
         help="Phased reference VCF, if supplied, will not re-run phasing.",
     )
     p.add_argument(
         "--run-eagle",
+        reuqired=False,
         action="store_true",
         help="Whether to run eagle to phase samples.",
     )
     p.add_argument("--phased-sample-vcf", help="VCF of phased samples.")
     p.add_argument(
         "--run-tractor",
+        required=False,
         action="store_true",
         help="Run Tractor's ExtractTracts.py script.",
     )
-    p.add_argument("--msp-file", help="Output from LAI program like RFMix2.")
+    p.add_argument(
+        "--msp-file", required=False, help="Output from LAI program like RFMix2."
+    )
     p.add_argument(
         "--ancs",
+        required=False,
         help="Number of ancestries within the reference panel. Used to extract ancestry tracts from phased VCF in Tractor.",
         default=3,
         type=int,
@@ -267,6 +285,7 @@ if __name__ == "__main__":
 
     if args.slack_channel:
         from slack_creds import slack_token
+
         with slack_notifications(slack_token, args.slack_channel):
             run_lai(args)
     else:
