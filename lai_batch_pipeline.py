@@ -2,7 +2,6 @@ import logging
 import hailtop.batch as hb
 
 from gnomad.utils.slack import slack_notifications
-from slack_creds import slack_token
 from batch.batch_utils import (
     init_arg_parser,
     init_job,
@@ -267,6 +266,7 @@ if __name__ == "__main__":
     args = p.parse_args()
 
     if args.slack_channel:
+        from slack_creds import slack_token
         with slack_notifications(slack_token, args.slack_channel):
             run_lai(args)
     else:
