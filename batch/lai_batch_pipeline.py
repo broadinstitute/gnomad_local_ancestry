@@ -13,9 +13,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-GCLOUD_USER_ACCOUNT = "mwilson@broadinstitute.org"
-GCLOUD_CREDENTIALS_LOCATION = "gs://seqr-mwilson-misc/"
-
 
 def check_args(parser, args):
     """
