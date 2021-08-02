@@ -238,8 +238,7 @@ def tractor(
         rg_def[f"vcf{i}"] = f"{{root}}.anc{i}.vcf"
         rg_def[f"dos{i}.txt"] = f"{{root}}.anc{i}.dosage.txt"
         rg_def[f"ancdos{i}.txt"] = f"{{root}}.anc{i}.hapcount.txt"
-    t.command("ls -l")
-    t.command("ls -l ../")
+
     t.declare_resource_group(ofile=rg_def)
     zipped = "--zipped" if zipped else ""
     cmd = f"""
