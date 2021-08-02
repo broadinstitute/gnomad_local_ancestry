@@ -30,11 +30,11 @@ def check_args(parser, args):
             parser.error(
                 "Need to specify either sample and/or reference vcfs (--sample-vcf or --ref-vcf)"
             )
-    if args.run_rfmix and args.xgmix:
+    if args.run_rfmix and args.run_xgmix:
         parser.error(
             "Can only specify LAI tool, either RFMix or XGMix (--run-rfmix or --run-xgmix)"
         )
-    if args.run_rfmix or args.xgmix:
+    if args.run_rfmix or args.run_xgmix:
         if not ((args.run_eagle and args.sample_vcf) or args.phased_sample_vcf):
             parser.error(
                 "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)"
@@ -57,7 +57,7 @@ def check_args(parser, args):
             parser.error(
                 "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)"
             )
-        if not args.run_rfmix and not args.msp_file:
+        if not (args.run_rfmix or args.run_xgmix) and not args.msp_file:
             parser.error(
                 "Need to run RFMix to generate MSP file or pass the MSP tsv file to the script, --msp-file."
             )
@@ -144,7 +144,7 @@ def rfmix(
         ofile={"msp.tsv": "{root}.msp.tsv", "fb.tsv": "{root}.fb.tsv"}
     )
     cmd = f"""
-    ./rfmix/rfmix \
+    ./rfmix \
         -f {sample_pvcf} \
         -r {ref_pvcf} \
         --chromosome=chr{contig} \
@@ -169,7 +169,7 @@ def xgmix(
     mem="highmem",
     storage="50G",
     threads=8,
-    image="gcr.io/broad-mpg-gnomad/lai_xgmix",
+    image="gcr.io/broad-mpg-gnomad/lai_xgmix:latest",
 ) -> hb.Batch.new_job:
     """
     Run XGMix on phased VCF.
@@ -186,7 +186,7 @@ def xgmix(
     :param image: XGMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_xgmix:latest"
     :return: Hail batch job
     """
-    x = batch.new_job(name="XGMix")
+    x = batch.new_job(name=f"XGMix - chr{contig}")
     x.memory(mem)
     x.storage(storage)
     x.cpu(threads)
@@ -195,7 +195,7 @@ def xgmix(
         ofile={"msp.tsv": "{root}.msp.tsv", "fb.tsv": "{root}.fb.tsv"}
     )
     cmd = f"""
-    python3 XGMIX.py {sample_pvcf} {xg_genetic_map} /io/tmp/xgmix/output {contig} False {ref_pvcf} {sample_map}
+    python3 XGMIX.py {sample_pvcf} {xg_genetic_map} /io/tmp/xgmix/output chr{contig} False {ref_pvcf} {sample_map}
     ln -s /io/tmp/xgmix/output/output.msp.tsv {x.ofile['msp.tsv']}
     ln -s /io/tmp/xgmix/output/output.fb.tsv {x.ofile['fb.tsv']}
     """
@@ -238,17 +238,18 @@ def tractor(
         rg_def[f"vcf{i}"] = f"{{root}}.anc{i}.vcf"
         rg_def[f"dos{i}.txt"] = f"{{root}}.anc{i}.dosage.txt"
         rg_def[f"ancdos{i}.txt"] = f"{{root}}.anc{i}.hapcount.txt"
-
+    t.command("ls -l")
+    t.command("ls -l ../")
     t.declare_resource_group(ofile=rg_def)
     zipped = "--zipped" if zipped else ""
     cmd = f"""
-        python3 Tractor/ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={ancs} {zipped} --output-path={t.ofile}
+        python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={ancs} {zipped} --output-path={t.ofile}
         """
     t.command(cmd)
     return t
 
 
-def run_lai(args):
+def main(args):
     """Run batch LAI pipeline."""
     contig = args.contig
     logger.info(f"Running gnomAD LAI on chr{contig}")
@@ -260,7 +261,7 @@ def run_lai(args):
 
             if args.ref_vcf:
                 ref_vcf = b.read_input(args.ref_vcf)
-                ref_e = eagle(b, ref_vcf, contig)
+                ref_e = eagle(b, ref_vcf, contig, image=args.eagle_image)
                 b.write_output(
                     ref_e.ofile, dest=f"{output_path}eagle/chr{contig}_reference"
                 )
@@ -289,6 +290,7 @@ def run_lai(args):
                     contig,
                     sample_map,
                     genetic_map,
+                    image=args.rfmix_image,
                 )
                 b.write_output(
                     lai.ofile, dest=f"{output_path}rfmix/output/lai_chr20_amr"
@@ -301,6 +303,7 @@ def run_lai(args):
                     contig,
                     phased_ref_vcf,
                     sample_map,
+                    image=args.xgmix_image,
                 )
                 b.write_output(
                     lai.ofile, dest=f"{output_path}xgmix/output/lai_chr20_amr"
@@ -318,7 +321,13 @@ def run_lai(args):
             else:
                 msp_file = lai.ofile
             t = tractor(
-                b, msp_file, phased_sample_vcf, args.ancs, zipped=True, contig=contig
+                b,
+                msp_file,
+                phased_sample_vcf,
+                args.ancs,
+                zipped=True,
+                contig=contig,
+                image=args.tractor_image,
             )
             b.write_output(t.ofile, dest=f"{output_path}tractor/output/chr20_amr2_11s")
 
@@ -355,6 +364,26 @@ if __name__ == "__main__":
         required=False,
         action="store_true",
         help="Run local ancestry tool XGMix.",
+    )
+    p.add_argument(
+        "--eagle-image",
+        help="Docker image for Eagle",
+        default="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
+    )
+    p.add_argument(
+        "--xgmix-image",
+        help="Docker image for XGMix",
+        default="gcr.io/broad-mpg-gnomad/lai_xgmix:latest",
+    )
+    p.add_argument(
+        "--rfmix-image",
+        help="Docker image for RFMix_v2",
+        default="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
+    )
+    p.add_argument(
+        "--tractor-image",
+        help="Docker image for Tractor",
+        default="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
     )
     p.add_argument(
         "--genetic-map",
@@ -406,6 +435,6 @@ if __name__ == "__main__":
         from slack_creds import slack_token
 
         with slack_notifications(slack_token, args.slack_channel):
-            run_lai(args)
+            main(args)
     else:
-        run_lai(args)
+        main(args)
