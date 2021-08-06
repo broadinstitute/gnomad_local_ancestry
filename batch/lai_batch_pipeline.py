@@ -23,25 +23,25 @@ def check_args(parser, args):
     """
     if not (args.run_eagle or args.run_rfmix or args.run_xgmix or args.run_tractor):
         parser.error(
-            "Need to specify at least one tool to run (--run-eagle, --run-rfmix, and/or --run-tractor)"
+            "Need to specify at least one tool to run (--run-eagle, --run-rfmix, --run-xgmix, and/or --run-tractor)."
         )
     if args.run_eagle:
         if not (args.sample_vcf or args.ref_vcf):
             parser.error(
-                "Need to specify either sample and/or reference vcfs (--sample-vcf or --ref-vcf)"
+                "Need to specify either sample and/or reference vcfs (--sample-vcf or --ref-vcf)."
             )
     if args.run_rfmix and args.run_xgmix:
         parser.error(
-            "Can only specify LAI tool, either RFMix or XGMix (--run-rfmix or --run-xgmix)"
+            "Can only specify one LAI tool, either RFMix or XGMix (--run-rfmix or --run-xgmix)."
         )
     if args.run_rfmix or args.run_xgmix:
         if not ((args.run_eagle and args.sample_vcf) or args.phased_sample_vcf):
             parser.error(
-                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)"
+                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)."
             )
         if not ((args.run_eagle and args.ref_vcf) or args.phased_ref_vcf):
             parser.error(
-                "Need to specify either reference vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --reference-vcf or --phased-reference-vcf)"
+                "Need to specify either reference vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --reference-vcf or --phased-reference-vcf)."
             )
         if not args.genetic_map:
             parser.error(
@@ -49,13 +49,13 @@ def check_args(parser, args):
             )
         if not args.pop_sample_map:
             parser.error(
-                "Need to specify sample to population mapping file, --pop-sample-map"
+                "Need to specify sample to population mapping file, --pop-sample-map."
             )
 
     if args.run_tractor:
         if not ((args.run_eagle and args.sample_vcf) or args.phased_sample_vcf):
             parser.error(
-                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)"
+                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)."
             )
         if not (args.run_rfmix or args.run_xgmix) and not args.msp_file:
             parser.error(
@@ -68,19 +68,19 @@ def check_args(parser, args):
 
 
 def eagle(
-    batch,
-    vcf,
-    contig,
-    mem="standard",
-    storage="50G",
-    threads=8,
-    image="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
+    batch: hb.Batch,
+    vcf: str,
+    contig: str,
+    mem: str = "standard",
+    storage: str = "50G",
+    threads: int = 8,
+    image: str = "gcr.io/broad-mpg-gnomad/lai_phasing:latest",
 ) -> hb.Batch.new_job:
     """
     Run the phasing tool Eagle on passed VCF.
 
-    :param batch: Hail batch
-    :param vcf: VCF to phase
+    :param batch: Hail batch object.
+    :param vcf: VCF to phase.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mem: Hail batch job memory, defaults to "standard".
     :param storage: Hail batch job storage, deaults to "50G".
@@ -109,30 +109,30 @@ def eagle(
 
 
 def rfmix(
-    batch,
-    sample_pvcf,
-    ref_pvcf,
-    contig,
-    sample_map,
-    rf_genetic_map,
-    mem="highmem",
-    storage="50G",
-    threads=8,
-    image="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
+    batch: hb.Batch,
+    sample_pvcf: str,
+    ref_pvcf: str,
+    contig: str,
+    sample_map: str,
+    rf_genetic_map: str,
+    mem: str = "highmem",
+    storage: str = "50G",
+    threads: int = 8,
+    image: str = "gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
 ) -> hb.Batch.new_job:
     """
     Run RFMix2 on phased VCF.
 
-    :param batch: Hail batch object
+    :param batch: Hail batch object.
     :param sample_pvcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
-    :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or ShapeIt.
+    :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or SHAPEIT.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
     :param rf_genetic_map: HapMap genetic map from SNP base pair positions to genetic coordinates in cM.
     :param mem: Hail batch job memory, defaults to "standard".
     :param storage: Hail batch job storage, deaults to "50G".
     :param threads: The number of threads, should match the number of CPUs requested, defaults to 8.
-    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_rfmix:latest"
+    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_rfmix:latest".
     :return: Hail batch job
     """
     r = batch.new_job(name=f"RFMix - chr{contig}")
@@ -160,30 +160,30 @@ def rfmix(
 
 
 def xgmix(
-    batch,
-    sample_pvcf,
-    xg_genetic_map,
-    contig,
-    ref_pvcf,
-    sample_map,
-    mem="highmem",
-    storage="50G",
-    threads=8,
-    image="gcr.io/broad-mpg-gnomad/lai_xgmix:latest",
+    batch: hb.Batch,
+    sample_pvcf: str,
+    xg_genetic_map: str,
+    contig: str,
+    ref_pvcf: str,
+    sample_map: str,
+    mem: str = "30Gi",
+    storage: str = "100G",
+    threads: int = 8,
+    image: str = "gcr.io/broad-mpg-gnomad/lai_xgmix:latest",
 ) -> hb.Batch.new_job:
     """
     Run XGMix on phased VCF.
 
-    :param batch: Hail batch object
+    :param batch: Hail batch object.
     :param sample_pvcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
     :param xg_genetic_map: HapMap genetic map from SNP base pair positions to genetic coordinates in cM.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
-    :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or ShapeIt.
+    :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or SHAPEIT.
     :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
     :param mem: Hail batch job memory, defaults to "standard".
     :param storage: Hail batch job storage, deaults to "50G".
     :param threads: The number of threads, should match the number of CPUs requested, defaults to 8.
-    :param image: XGMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_xgmix:latest"
+    :param image: XGMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_xgmix:latest".
     :return: Hail batch job
     """
     x = batch.new_job(name=f"XGMix - chr{contig}")
@@ -204,20 +204,20 @@ def xgmix(
 
 
 def tractor(
-    batch,
-    msp,
-    vcf,
-    ancs,
-    zipped,
-    contig,
-    mem="standard",
-    storage="50G",
-    image="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
+    batch: hb.Batch,
+    msp: str,
+    vcf: str,
+    ancs: int,
+    zipped: str,
+    contig: str,
+    mem: str = "highmem",
+    storage: str = "200G",
+    image: str = "gcr.io/broad-mpg-gnomad/lai_tractor:latest",
 ) -> hb.Batch.new_job:
     """
     Run Tractor's ExtractTract.py script.
 
-    :param batch: Hail batch object
+    :param batch: Hail batch object.
     :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
     :param vcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
     :param ancs: Number of ancestral population within the MSP file.
@@ -225,7 +225,7 @@ def tractor(
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mem: Hail batch job memory, defaults to "standard".
     :param storage: Hail batch job storage, deaults to "50G".
-    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest"
+    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest".
     :return: Hail Batch job
     """
     t = batch.new_job(name=f"Tractor - chr{contig}")
@@ -302,6 +302,8 @@ def main(args):
                     contig,
                     phased_ref_vcf,
                     sample_map,
+                    threads=16,
+                    mem="highmem",
                     image=args.xgmix_image,
                 )
                 b.write_output(
@@ -366,34 +368,34 @@ if __name__ == "__main__":
     )
     p.add_argument(
         "--eagle-image",
-        help="Docker image for Eagle",
+        help="Docker image for Eagle.",
         default="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
     )
     p.add_argument(
         "--xgmix-image",
-        help="Docker image for XGMix",
+        help="Docker image for XGMix.",
         default="gcr.io/broad-mpg-gnomad/lai_xgmix:latest",
     )
     p.add_argument(
         "--rfmix-image",
-        help="Docker image for RFMix_v2",
+        help="Docker image for RFMix_v2.",
         default="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
     )
     p.add_argument(
         "--tractor-image",
-        help="Docker image for Tractor",
+        help="Docker image for Tractor.",
         default="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
     )
     p.add_argument(
         "--genetic-map",
         required=False,
-        help="Genetic map for required for RFMix2.",
+        help="Genetic map required for RFMix_v2.",
         default="gs://gnomad-batch/mwilson/lai/inputs/rfmix/genetic_map_hg38.txt",
     )
     p.add_argument(
         "--pop-sample-map", required=False, help="Sample population mapping for RFMix2."
     )
-    p.add_argument("--contig", required=True, help="Chromosomes to run LAI on.")
+    p.add_argument("--contig", required=True, help="Chromosome to run LAI on.")
     p.add_argument(
         "--slack-channel",
         required=False,
@@ -418,7 +420,7 @@ if __name__ == "__main__":
         help="Run Tractor's ExtractTracts.py script.",
     )
     p.add_argument(
-        "--msp-file", required=False, help="Output from LAI program like RFMix2."
+        "--msp-file", required=False, help="Output from LAI program like RFMix_v2."
     )
     p.add_argument(
         "--ancs",
