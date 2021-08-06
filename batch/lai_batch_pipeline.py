@@ -262,13 +262,11 @@ def main(args):
                 ref_vcf = b.read_input(args.ref_vcf)
                 ref_e = eagle(b, ref_vcf, contig, image=args.eagle_image)
                 b.write_output(
-                    ref_e.ofile, dest=f"{output_path}eagle/chr{contig}_reference"
+                    ref_e.ofile, dest=f"{output_path}eagle/reference_chr{contig}"
                 )
 
             e = eagle(b, vcf, contig)
-            b.write_output(
-                e.ofile, dest=f"{output_path}eagle/output/phased_chr{contig}_amr"
-            )
+            b.write_output(e.ofile, dest=f"{output_path}eagle/output/chr{contig}")
 
         if args.run_rfmix or args.run_xgmix:
             sample_map = b.read_input(args.pop_sample_map)
@@ -291,9 +289,7 @@ def main(args):
                     genetic_map,
                     image=args.rfmix_image,
                 )
-                b.write_output(
-                    lai.ofile, dest=f"{output_path}rfmix/output/lai_chr20_amr"
-                )
+                b.write_output(lai.ofile, dest=f"{output_path}rfmix/output/chr{contig}")
             if args.run_xgmix:
                 lai = xgmix(
                     b,
@@ -306,9 +302,7 @@ def main(args):
                     mem="highmem",
                     image=args.xgmix_image,
                 )
-                b.write_output(
-                    lai.ofile, dest=f"{output_path}xgmix/output/lai_chr20_amr"
-                )
+                b.write_output(lai.ofile, dest=f"{output_path}xgmix/output/chr{contig}")
 
         if args.run_tractor:
             if args.phased_sample_vcf:
@@ -330,7 +324,7 @@ def main(args):
                 contig=contig,
                 image=args.tractor_image,
             )
-            b.write_output(t.ofile, dest=f"{output_path}tractor/output/chr20_amr2_11s")
+            b.write_output(t.ofile, dest=f"{output_path}tractor/output/chr{contig}")
 
 
 if __name__ == "__main__":
