@@ -262,11 +262,13 @@ def main(args):
                 ref_vcf = b.read_input(args.ref_vcf)
                 ref_e = eagle(b, ref_vcf, contig, image=args.eagle_image)
                 b.write_output(
-                    ref_e.ofile, dest=f"{output_path}eagle/reference_chr{contig}"
+                    ref_e.ofile, dest=f"{output_path}eagle/phased_reference_chr{contig}"
                 )
 
             e = eagle(b, vcf, contig)
-            b.write_output(e.ofile, dest=f"{output_path}eagle/output/chr{contig}")
+            b.write_output(
+                e.ofile, dest=f"{output_path}eagle/output/phased_chr{contig}"
+            )
 
         if args.run_rfmix or args.run_xgmix:
             sample_map = b.read_input(args.pop_sample_map)
