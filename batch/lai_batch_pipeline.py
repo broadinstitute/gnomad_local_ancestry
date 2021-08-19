@@ -21,9 +21,15 @@ def check_args(parser, args):
     :param parser: arg parser.
     :param args: Arg's from argparser.
     """
-    if not (args.run_eagle or args.run_rfmix or args.run_xgmix or args.run_tractor):
+    if not (
+        args.run_eagle
+        or args.run_rfmix
+        or args.run_xgmix
+        or args.run_tractor
+        or args.make_lai_vcf
+    ):
         parser.error(
-            "Need to specify at least one tool to run (--run-eagle, --run-rfmix, --run-xgmix, and/or --run-tractor)."
+            "Need to specify at least one tool to run (--run-eagle, --run-rfmix, --run-xgmix, --run-tractor, and/or --make-lai-vcf)."
         )
     if args.run_eagle:
         if not (args.sample_vcf or args.ref_vcf):
@@ -208,7 +214,8 @@ def tractor(
     msp: str,
     vcf: str,
     ancs: int,
-    zipped: str,
+    zipped: bool,
+    zip_output: bool,
     contig: str,
     mem: str = "highmem",
     storage: str = "200G",
@@ -222,6 +229,7 @@ def tractor(
     :param vcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
     :param ancs: Number of ancestral population within the MSP file.
     :param zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
+    :param zip_output: Whether to zip the tool's output files.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mem: Hail batch job memory, defaults to "standard".
     :param storage: Hail batch job storage, deaults to "50G".
@@ -234,18 +242,57 @@ def tractor(
     t.memory(mem)
 
     rg_def = {}
+    file_extension = {".gz" if zip_output else ""}
     for i in range(ancs):
-        rg_def[f"vcf{i}"] = f"{{root}}.anc{i}.vcf"
-        rg_def[f"dos{i}.txt"] = f"{{root}}.anc{i}.dosage.txt"
-        rg_def[f"ancdos{i}.txt"] = f"{{root}}.anc{i}.hapcount.txt"
+        rg_def[f"vcf{i}.gz"] = f"{{root}}.anc{i}.vcf{file_extension}"
+        rg_def[f"dos{i}.txt.gz"] = f"{{root}}.anc{i}.dosage.txt{file_extension}"
+        rg_def[f"ancdos{i}.txt.gz"] = f"{{root}}.anc{i}.hapcount.txt{file_extension}"
 
     t.declare_resource_group(ofile=rg_def)
     zipped = "--zipped" if zipped else ""
+    zip_output = "--zip-output" if zip_output else ""
     cmd = f"""
-        python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={ancs} {zipped} --output-path={t.ofile}
+        python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={ancs} {zipped} {zip_output} --output-path={t.ofile}
         """
     t.command(cmd)
     return t
+
+
+def generate_lai_vcf(
+    batch: hb.Batch,
+    msp: str,
+    tractor_output: str,
+    zipped: bool,
+    contig: str,
+    mem: str = "highmem",
+    storage: str = "200G",
+    image: str = "gcr.io/broad-mpg-gnomad/lai_vcf:latest",
+) -> hb.Batch.new_job:
+    """
+    Run generate_output_vcf.py script.
+
+    :param batch: Hail batch object.
+    :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
+    :param tractor_output: Path to Tractor's output files.
+    :param ancs: Number of ancestral populations within the MSP file.
+    :param zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
+    :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param mem: Hail batch job memory, defaults to "standard".
+    :param storage: Hail batch job storage, deaults to "50G".
+    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest".
+    :return: Hail Batch job
+    """
+    v = batch.new_job(name=f"Generate final VCF - chr{contig}")
+    v.storage(storage)
+    v.image(image)
+    v.memory(mem)
+    v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
+
+    cmd = f"""
+        python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if zipped else ""} --output-path {v.ofile}
+        """
+    v.command(cmd)
+    return v
 
 
 def main(args):
@@ -273,14 +320,17 @@ def main(args):
         if args.run_rfmix or args.run_xgmix:
             sample_map = b.read_input(args.pop_sample_map)
             genetic_map = b.read_input(args.genetic_map)
-            if args.phased_ref_vcf:
-                phased_ref_vcf = b.read_input(args.phased_ref_vcf)
-            else:
-                phased_ref_vcf = ref_e.ofile
-            if args.phased_sample_vcf:
-                phased_sample_vcf = b.read_input(args.phased_sample_vcf)
-            else:
-                phased_sample_vcf = e.ofile.vcf
+            phased_ref_vcf = (
+                b.read_input(args.phased_ref_vcf)
+                if args.phased_ref_vcf
+                else ref_e.ofile.vcf
+            )
+            phased_sample_vcf = (
+                b.read_input(args.phased_sample_vcf)
+                if args.phased_sample_vcf
+                else e.ofile.vcf
+            )
+
             if args.run_rfmix:
                 lai = rfmix(
                     b,
@@ -307,26 +357,55 @@ def main(args):
                 b.write_output(lai.ofile, dest=f"{output_path}xgmix/output/chr{contig}")
 
         if args.run_tractor:
-            if args.phased_sample_vcf:
-                phased_sample_vcf = b.read_input_group(
-                    **{"vcf.gz": args.phased_sample_vcf}
-                )
-            else:
-                phased_sample_vcf = e.ofile.vcf
-            if args.msp_file:
-                msp_file = b.read_input_group(**{"msp.tsv": args.msp_file})
-            else:
-                msp_file = lai.ofile
+            phased_sample_vcf = (
+                b.read_input_group(**{"vcf.gz": args.phased_sample_vcf})
+                if args.phased_sample_vcf
+                else e.ofile.vcf
+            )
+            msp_file = (
+                b.read_input_group(**{"msp.tsv": args.msp_file})
+                if args.msp_file
+                else lai.ofile
+            )
             t = tractor(
                 b,
                 msp_file,
                 phased_sample_vcf,
                 args.ancs,
                 zipped=True,
+                zip_output=args.zip_tractor_output,
                 contig=contig,
                 image=args.tractor_image,
             )
             b.write_output(t.ofile, dest=f"{output_path}tractor/output/chr{contig}")
+
+        if args.make_lai_vcf:
+            msp_file = b.read_input(args.msp_file) if args.msp_file else lai.ofile
+            rg_def = {}
+            if args.tractor_output:
+                for i in range(args.ancs):
+                    rg_def[
+                        f"vcf{i}.gz"
+                    ] = f"{args.tractor_output}.anc{i}.vcf{'.gz' if args.zip_tractor_output else ''}"
+                    rg_def[
+                        f"dos{i}.txt.gz"
+                    ] = f"{args.tractor_output}.anc{i}.dosage.txt{'.gz' if args.zip_tractor_output else ''}"
+                    rg_def[
+                        f"ancdos{i}.txt.gz"
+                    ] = f"{args.tractor_output}.anc{i}.hapcount.txt{'.gz' if args.zip_tractor_output else ''}"
+            tractor_output = (
+                b.read_input_group(**rg_def) if args.tractor_output else t.ofile
+            )
+            v = generate_lai_vcf(
+                b,
+                msp_file,
+                tractor_output,
+                zipped=args.zip_tractor_output,
+                contig=contig,
+            )
+            b.write_output(
+                v.ofile, dest=f"{output_path}tractor/output/chr{contig}_annotated"
+            )
 
 
 if __name__ == "__main__":
@@ -424,6 +503,18 @@ if __name__ == "__main__":
         help="Number of ancestries within the reference panel. Used to extract ancestry tracts from phased VCF in Tractor.",
         default=3,
         type=int,
+    )
+    p.add_argument(
+        "--tractor-output",
+        help="Path to tractor output files without anc.hapcount.txt and anc.dosage.txt, e.g. /Tractor/output/test_run",
+    )
+    p.add_argument(
+        "--make-lai-vcf",
+        help="Generate single VCF with ancestry AFs from tractor output, e.g. /Tractor/output/test_run",
+        action="store_true",
+    )
+    p.add_argument(
+        "--zip-tractor-output", help="Zip Tractors output", action="store_true"
     )
     args = p.parse_args()
     check_args(p, args)
