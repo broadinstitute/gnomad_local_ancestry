@@ -108,6 +108,7 @@ def generate_joint_vcf(
     anc_mts = generate_anc_mt_dict(
         ancs=ancestries, output_path=tractor_output, file_extension=file_extension,
     )
+    # Use one of the ancestry MTs as the base for the VCF export
     entry_ancs = anc_mts.copy()
     anc, mt = entry_ancs.popitem()
     dos_hap_dict = {}
@@ -121,17 +122,15 @@ def generate_joint_vcf(
         )
 
     mt = mt.annotate_entries(**dos_hap_dict)
-    for anc, anc_mt in anc_mts.items():
+    for anc in anc_mts:
         callstat_dict.update(
             {
                 f"{anc}_AC": hl.agg.sum(mt[f"{anc}_dos"]),
                 f"{anc}_AN": hl.agg.sum(mt[f"{anc}_hap"]),
                 f"{anc}_AF": hl.if_else(
-                    hl.is_defined(
-                        hl.agg.sum(mt[f"{anc}_dos"]) / hl.agg.sum(mt[f"{anc}_hap"])
-                    ),
-                    hl.agg.sum(mt[f"{anc}_dos"]) / hl.agg.sum(mt[f"{anc}_hap"]),
+                    hl.agg.sum(mt[f"{anc}_hap"]) == 0,
                     0,
+                    hl.agg.sum(mt[f"{anc}_dos"]) / hl.agg.sum(mt[f"{anc}_hap"]),
                 ),
             }
         )
