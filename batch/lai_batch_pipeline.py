@@ -414,6 +414,17 @@ if __name__ == "__main__":
         default_temp_bucket="gnomad-batch",
     )
     p.add_argument(
+        "--output-bucket",
+        required=True,
+        help="Google bucket path for results. Each tool will create a subfolder here.",
+    )
+    p.add_argument(
+        "--run-eagle",
+        required=False,
+        action="store_true",
+        help="Whether to run eagle to phase samples.",
+    )
+    p.add_argument(
         "--sample-vcf",
         required=False,
         help="Google bucket path to sample VCF to phase.",
@@ -424,15 +435,26 @@ if __name__ == "__main__":
         help="Google bucket path reference VCF to phase if separate.",
     )
     p.add_argument(
-        "--output-bucket",
-        required=True,
-        help="Google bucket path for results. Each tool will create a subfolder here.",
+        "--eagle-image",
+        help="Docker image for Eagle.",
+        default="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
     )
+    p.add_argument(
+        "--phased-ref-vcf",
+        required=False,
+        help="Phased reference VCF, if supplied, will not re-run phasing.",
+    )
+    p.add_argument("--phased-sample-vcf", help="VCF of phased samples.")
     p.add_argument(
         "--run-rfmix",
         required=False,
         action="store_true",
         help="Run local ancestry tool RFMix2.",
+    )
+    p.add_argument(
+        "--rfmix-image",
+        help="Docker image for RFMix_v2.",
+        default="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
     )
     p.add_argument(
         "--run-xgmix",
@@ -441,24 +463,9 @@ if __name__ == "__main__":
         help="Run local ancestry tool XGMix.",
     )
     p.add_argument(
-        "--eagle-image",
-        help="Docker image for Eagle.",
-        default="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
-    )
-    p.add_argument(
         "--xgmix-image",
         help="Docker image for XGMix.",
         default="gcr.io/broad-mpg-gnomad/lai_xgmix:latest",
-    )
-    p.add_argument(
-        "--rfmix-image",
-        help="Docker image for RFMix_v2.",
-        default="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
-    )
-    p.add_argument(
-        "--tractor-image",
-        help="Docker image for Tractor.",
-        default="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
     )
     p.add_argument(
         "--genetic-map",
@@ -471,22 +478,8 @@ if __name__ == "__main__":
     )
     p.add_argument("--contig", required=True, help="Chromosome to run LAI on.")
     p.add_argument(
-        "--slack-channel",
-        required=False,
-        help="Slack channel to send job status to, needs @ for DM.",
+        "--msp-file", required=False, help="Output from LAI program like RFMix_v2."
     )
-    p.add_argument(
-        "--phased-ref-vcf",
-        required=False,
-        help="Phased reference VCF, if supplied, will not re-run phasing.",
-    )
-    p.add_argument(
-        "--run-eagle",
-        required=False,
-        action="store_true",
-        help="Whether to run eagle to phase samples.",
-    )
-    p.add_argument("--phased-sample-vcf", help="VCF of phased samples.")
     p.add_argument(
         "--run-tractor",
         required=False,
@@ -494,7 +487,9 @@ if __name__ == "__main__":
         help="Run Tractor's ExtractTracts.py script.",
     )
     p.add_argument(
-        "--msp-file", required=False, help="Output from LAI program like RFMix_v2."
+        "--tractor-image",
+        help="Docker image for Tractor.",
+        default="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
     )
     p.add_argument(
         "--ancs",
@@ -502,6 +497,9 @@ if __name__ == "__main__":
         help="Number of ancestries within the reference panel. Used to extract ancestry tracts from phased VCF in Tractor.",
         default=3,
         type=int,
+    )
+    p.add_argument(
+        "--zip-tractor-output", help="Zip Tractors output", action="store_true"
     )
     p.add_argument(
         "--tractor-output",
@@ -513,7 +511,9 @@ if __name__ == "__main__":
         action="store_true",
     )
     p.add_argument(
-        "--zip-tractor-output", help="Zip Tractors output", action="store_true"
+        "--slack-channel",
+        required=False,
+        help="Slack channel to send job status to, needs @ for DM.",
     )
     args = p.parse_args()
     check_args(p, args)
