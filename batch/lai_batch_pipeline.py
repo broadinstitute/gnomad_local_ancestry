@@ -413,99 +413,113 @@ if __name__ == "__main__":
         default_billing_project="broad-mpg-gnomad",
         default_temp_bucket="gnomad-batch",
     )
+    phasing_args = p.add_argument_group("Phasing", "Arguments for phasing samples")
+    lai_args = p.add_argument_group(
+        "Local Ancestry Inference",
+        "Arguments for running local ancestry inference on samples",
+    )
+    tractor_args = p.add_argument_group(
+        "Tractor", "Arguments for running Tractor on samples"
+    )
+    vcf_args = p.add_argument_group("LAI VCF", "Arguments for generating LAI VCF")
     p.add_argument(
         "--output-bucket",
         required=True,
         help="Google bucket path for results. Each tool will create a subfolder here.",
     )
-    p.add_argument(
+    phasing_args.add_argument(
         "--run-eagle",
         required=False,
         action="store_true",
         help="Whether to run eagle to phase samples.",
     )
-    p.add_argument(
+    phasing_args.add_argument(
         "--sample-vcf",
         required=False,
         help="Google bucket path to sample VCF to phase.",
     )
-    p.add_argument(
+    phasing_args.add_argument(
         "--ref-vcf",
         required=False,
         help="Google bucket path reference VCF to phase if separate.",
     )
-    p.add_argument(
+    phasing_args.add_argument(
         "--eagle-image",
         help="Docker image for Eagle.",
         default="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
     )
-    p.add_argument(
+    lai_args.add_argument(
         "--phased-ref-vcf",
         required=False,
         help="Phased reference VCF, if supplied, will not re-run phasing.",
     )
-    p.add_argument("--phased-sample-vcf", help="VCF of phased samples.")
     p.add_argument(
+        "--phased-sample-vcf",
+        help="VCF of phased samples, needed for LAI and/or Tractor runs.",
+    )
+    lai_args.add_argument(
         "--run-rfmix",
         required=False,
         action="store_true",
         help="Run local ancestry tool RFMix2.",
     )
-    p.add_argument(
+    lai_args.add_argument(
         "--rfmix-image",
         help="Docker image for RFMix_v2.",
         default="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
     )
-    p.add_argument(
+    lai_args.add_argument(
         "--run-xgmix",
         required=False,
         action="store_true",
         help="Run local ancestry tool XGMix.",
     )
-    p.add_argument(
+    lai_args.add_argument(
         "--xgmix-image",
         help="Docker image for XGMix.",
         default="gcr.io/broad-mpg-gnomad/lai_xgmix:latest",
     )
-    p.add_argument(
+    lai_args.add_argument(
         "--genetic-map",
         required=False,
         help="Genetic map required for RFMix_v2.",
         default="gs://gnomad-batch/mwilson/lai/inputs/rfmix/genetic_map_hg38.txt",
     )
-    p.add_argument(
+    lai_args.add_argument(
         "--pop-sample-map", required=False, help="Sample population mapping for RFMix2."
     )
     p.add_argument("--contig", required=True, help="Chromosome to run LAI on.")
     p.add_argument(
-        "--msp-file", required=False, help="Output from LAI program like RFMix_v2."
+        "--msp-file",
+        required=False,
+        help="Output from LAI program like RFMix_v2. Needed for Tractor and/or VCF generation.",
     )
-    p.add_argument(
+    tractor_args.add_argument(
         "--run-tractor",
         required=False,
         action="store_true",
         help="Run Tractor's ExtractTracts.py script.",
     )
-    p.add_argument(
+    tractor_args.add_argument(
         "--tractor-image",
         help="Docker image for Tractor.",
         default="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
     )
-    p.add_argument(
+    tractor_args.add_argument(
         "--ancs",
         required=False,
         help="Number of ancestries within the reference panel. Used to extract ancestry tracts from phased VCF in Tractor.",
         default=3,
         type=int,
     )
-    p.add_argument(
+    tractor_args.add_argument(
         "--zip-tractor-output", help="Zip Tractors output", action="store_true"
     )
-    p.add_argument(
+    vcf_args.add_argument(
         "--tractor-output",
         help="Path to tractor output files without anc.hapcount.txt and anc.dosage.txt, e.g. /Tractor/output/test_run",
     )
-    p.add_argument(
+    vcf_args.add_argument(
         "--make-lai-vcf",
         help="Generate single VCF with ancestry AFs from tractor output, e.g. /Tractor/output/test_run",
         action="store_true",
