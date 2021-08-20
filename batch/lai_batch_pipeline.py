@@ -244,9 +244,13 @@ def tractor(
     rg_def = {}
     file_extension = {".gz" if zip_output else ""}
     for i in range(ancs):
-        rg_def[f"vcf{i}.gz"] = f"{{root}}.anc{i}.vcf{file_extension}"
-        rg_def[f"dos{i}.txt.gz"] = f"{{root}}.anc{i}.dosage.txt{file_extension}"
-        rg_def[f"ancdos{i}.txt.gz"] = f"{{root}}.anc{i}.hapcount.txt{file_extension}"
+        rg_def[f"vcf{i}{file_extension}"] = f"{{root}}.anc{i}.vcf{file_extension}"
+        rg_def[
+            f"dos{i}.txt{file_extension}"
+        ] = f"{{root}}.anc{i}.dosage.txt{file_extension}"
+        rg_def[
+            f"ancdos{i}.txt{file_extension}"
+        ] = f"{{root}}.anc{i}.hapcount.txt{file_extension}"
 
     t.declare_resource_group(ofile=rg_def)
     zipped = "--zipped" if zipped else ""
