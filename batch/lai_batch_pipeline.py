@@ -29,7 +29,7 @@ def check_args(parser, args):
         or args.make_lai_vcf
     ):
         parser.error(
-            "Need to specify at least one tool to run (--run-eagle, --run-rfmix, --run-xgmix, --run-tractor, and/or --make-lai-vcf)."
+            "Need to specify at least one step to run (--run-eagle, --run-rfmix, --run-xgmix, --run-tractor, and/or --make-lai-vcf)."
         )
     if args.run_eagle:
         if not (args.sample_vcf or args.ref_vcf):
@@ -67,7 +67,7 @@ def check_args(parser, args):
             parser.error(
                 "Need to run RFMix to generate MSP file or pass the MSP tsv file to the script, --msp-file."
             )
-        if not args.ancs:
+        if not args.n_ancs:
             parser.error(
                 "Need to specify either number of continental ancestries within RFMix and phased sample VCF."
             )
@@ -213,8 +213,8 @@ def tractor(
     batch: hb.Batch,
     msp: str,
     vcf: str,
-    ancs: int,
-    zipped: bool,
+    n_ancs: int,
+    input_zipped: bool,
     zip_output: bool,
     contig: str,
     mem: str = "highmem",
@@ -227,8 +227,8 @@ def tractor(
     :param batch: Hail batch object.
     :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
     :param vcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
-    :param ancs: Number of ancestral population within the MSP file.
-    :param zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
+    :param n_ancs: Number of ancestral population within the MSP file.
+    :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param zip_output: Whether to zip the tool's output files.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mem: Hail batch job memory, defaults to "highmem".
@@ -243,7 +243,7 @@ def tractor(
 
     rg_def = {}
     file_extension = {".gz" if zip_output else ""}
-    for i in range(ancs):
+    for i in range(n_ancs):
         rg_def[f"vcf{i}{file_extension}"] = f"{{root}}.anc{i}.vcf{file_extension}"
         rg_def[
             f"dos{i}.txt{file_extension}"
@@ -253,10 +253,10 @@ def tractor(
         ] = f"{{root}}.anc{i}.hapcount.txt{file_extension}"
 
     t.declare_resource_group(ofile=rg_def)
-    zipped = "--zipped" if zipped else ""
+    input_zipped = "--zipped" if input_zipped else ""
     zip_output = "--zip-output" if zip_output else ""
     cmd = f"""
-        python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={ancs} {zipped} {zip_output} --output-path={t.ofile}
+        python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={n_ancs} {input_zipped} {zip_output} --output-path={t.ofile}
         """
     t.command(cmd)
     return t
@@ -266,7 +266,7 @@ def generate_lai_vcf(
     batch: hb.Batch,
     msp: str,
     tractor_output: str,
-    zipped: bool,
+    input_zipped: bool,
     contig: str,
     mem: str = "highmem",
     storage: str = "200G",
@@ -279,11 +279,11 @@ def generate_lai_vcf(
     :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
     :param tractor_output: Path to Tractor's output files.
     :param ancs: Number of ancestral populations within the MSP file.
-    :param zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
+    :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
-    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest".
+    :param image: VCF Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_vcf:latest".
     :return: Hail Batch job
     """
     v = batch.new_job(name=f"Generate final VCF - chr{contig}")
@@ -293,14 +293,22 @@ def generate_lai_vcf(
     v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
 
     cmd = f"""
-        python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if zipped else ""} --output-path {v.ofile}
+        python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if input_zipped else ""} --output-path {v.ofile}
         """
     v.command(cmd)
     return v
 
 
 def main(args):
-    """Run batch LAI pipeline."""
+    """Run batch local ancestry inference pipeline.
+
+    The pipeline has four steps that can run independently or in series usings user input or a previous step's output.
+
+        - Phase a sample VCF and a reference VCF using Eagle.
+        - Run a local ancestry tool, either RFMix or XGMix, on phased sample VCF.
+        - Run Tractor to extract ancestral components from the phased VCF and generate a VCF, dosage counts, and haplotpye counts per ancestry.
+        - Generate a single VCF with ancestry-specific call statistics ( AC, AN, AF).
+    """
     contig = args.contig
     logger.info(f"Running gnomAD LAI on chr{contig}")
     with run_batch(args, f"LAI - chr{contig}") as b:
@@ -360,21 +368,22 @@ def main(args):
                 b.write_output(lai.ofile, dest=f"{output_path}xgmix/output/chr{contig}")
 
         if args.run_tractor:
-            phased_sample_vcf = (
-                b.read_input_group(**{"vcf.gz": args.phased_sample_vcf})
-                if args.phased_sample_vcf
-                else e.ofile.vcf
-            )
+            # Both inputs have a specified extension so batch can find the file and pass it to Tractor which expects files without extensions
             msp_file = (
                 b.read_input_group(**{"msp.tsv": args.msp_file})
                 if args.msp_file
                 else lai.ofile
             )
+            phased_sample_vcf = (
+                b.read_input_group(**{"vcf.gz": args.phased_sample_vcf})
+                if args.phased_sample_vcf
+                else e.ofile.vcf
+            )
             t = tractor(
                 b,
                 msp_file,
                 phased_sample_vcf,
-                args.ancs,
+                args.n_ancs,
                 zipped=True,
                 zip_output=args.zip_tractor_output,
                 contig=contig,
@@ -386,7 +395,7 @@ def main(args):
             msp_file = b.read_input(args.msp_file) if args.msp_file else lai.ofile
             rg_def = {}
             if args.tractor_output:
-                for i in range(args.ancs):
+                for i in range(args.n_ancs):
                     rg_def[
                         f"vcf{i}.gz"
                     ] = f"{args.tractor_output}.anc{i}.vcf{'.gz' if args.zip_tractor_output else ''}"
@@ -405,6 +414,7 @@ def main(args):
                 tractor_output,
                 zipped=args.zip_tractor_output,
                 contig=contig,
+                image=args.vcf_image,
             )
             b.write_output(
                 v.ofile, dest=f"{output_path}tractor/output/chr{contig}_annotated"
@@ -417,20 +427,31 @@ if __name__ == "__main__":
         default_billing_project="broad-mpg-gnomad",
         default_temp_bucket="gnomad-batch",
     )
-    phasing_args = p.add_argument_group("Phasing", "Arguments for phasing samples")
-    lai_args = p.add_argument_group(
-        "Local Ancestry Inference",
-        "Arguments for running local ancestry inference tools (rfmix, xgmix) on samples",
+    multi_args = p.add_argument_group(
+        "Multi-step use", "Arguments used by multiple steps"
     )
-    tractor_args = p.add_argument_group(
-        "Tractor", "Arguments for running Tractor on samples"
-    )
-    vcf_args = p.add_argument_group("LAI VCF", "Arguments for generating LAI VCF")
-    p.add_argument(
+    multi_args.add_argument("--contig", required=True, help="Chromosome to run LAI on.")
+    multi_args.add_argument(
         "--output-bucket",
         required=True,
         help="Google bucket path for results. Each tool will create a subfolder here.",
     )
+    multi_args.add_argument(
+        "--slack-channel",
+        required=False,
+        help="Slack channel to send job status to, needs @ for DM.",
+    )
+    multi_args.add_argument(
+        "--phased-sample-vcf",
+        required=False,
+        help="Zipped VCF of phased samples, needed for LAI and/or Tractor runs.",
+    )
+    multi_args.add_argument(
+        "--msp-file",
+        required=False,
+        help="Output from LAI program like RFMix_v2. Needed for Tractor and/or VCF generation.",
+    )
+    phasing_args = p.add_argument_group("Phasing", "Arguments for phasing samples")
     phasing_args.add_argument(
         "--run-eagle",
         required=False,
@@ -452,14 +473,14 @@ if __name__ == "__main__":
         help="Docker image for Eagle.",
         default="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
     )
+    lai_args = p.add_argument_group(
+        "Local Ancestry Inference",
+        "Arguments for running local ancestry inference tools (rfmix, xgmix) on samples",
+    )
     lai_args.add_argument(
         "--phased-ref-vcf",
         required=False,
-        help="Phased reference VCF, if supplied, will not re-run phasing.",
-    )
-    p.add_argument(
-        "--phased-sample-vcf",
-        help="VCF of phased samples, needed for LAI and/or Tractor runs.",
+        help="Zipped VCF of phased reference samples. If supplied, the phasing step will not run on reference data.",
     )
     lai_args.add_argument(
         "--run-rfmix",
@@ -485,18 +506,14 @@ if __name__ == "__main__":
     )
     lai_args.add_argument(
         "--genetic-map",
-        required=False,
         help="Genetic map required for RFMix_v2.",
         default="gs://gnomad-batch/mwilson/lai/inputs/rfmix/genetic_map_hg38.txt",
     )
     lai_args.add_argument(
         "--pop-sample-map", required=False, help="Sample population mapping for RFMix2."
     )
-    p.add_argument("--contig", required=True, help="Chromosome to run LAI on.")
-    p.add_argument(
-        "--msp-file",
-        required=False,
-        help="Output from LAI program like RFMix_v2. Needed for Tractor and/or VCF generation.",
+    tractor_args = p.add_argument_group(
+        "Tractor", "Arguments for running Tractor on samples"
     )
     tractor_args.add_argument(
         "--run-tractor",
@@ -510,8 +527,7 @@ if __name__ == "__main__":
         default="gcr.io/broad-mpg-gnomad/lai_tractor:latest",
     )
     tractor_args.add_argument(
-        "--ancs",
-        required=False,
+        "--n-ancs",
         help="Number of ancestries within the reference panel. Used to extract ancestry tracts from phased VCF in Tractor.",
         default=3,
         type=int,
@@ -519,6 +535,7 @@ if __name__ == "__main__":
     tractor_args.add_argument(
         "--zip-tractor-output", help="Zip Tractors output", action="store_true"
     )
+    vcf_args = p.add_argument_group("LAI VCF", "Arguments for generating LAI VCF")
     vcf_args.add_argument(
         "--tractor-output",
         help="Path to tractor output files without anc.hapcount.txt and anc.dosage.txt, e.g. /Tractor/output/test_run",
@@ -528,10 +545,10 @@ if __name__ == "__main__":
         help="Generate single VCF with ancestry AFs from tractor output, e.g. /Tractor/output/test_run",
         action="store_true",
     )
-    p.add_argument(
-        "--slack-channel",
-        required=False,
-        help="Slack channel to send job status to, needs @ for DM.",
+    vcf_args.add_argument(
+        "--vcf-image",
+        help="Docker image for VCF generation.",
+        default="gcr.io/broad-mpg-gnomad/lai_vcf:latest",
     )
     args = p.parse_args()
     check_args(p, args)
