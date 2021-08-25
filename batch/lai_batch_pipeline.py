@@ -78,9 +78,9 @@ def eagle(
     batch: hb.Batch,
     vcf: str,
     contig: str,
-    mem: str = "standard",
-    storage: str = "50G",
-    cpu: int = 8,
+    mem: str = "highmen",
+    storage: str = "100G",
+    cpu: int = 16,
     image: str = "gcr.io/broad-mpg-gnomad/lai_phasing:latest",
 ) -> hb.Batch.new_job:
     """
@@ -89,9 +89,9 @@ def eagle(
     :param batch: Hail batch object.
     :param vcf: VCF to phase.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
-    :param mem: Hail batch job memory, defaults to "standard".
-    :param storage: Hail batch job storage, defaults to "50G".
-    :param cpu: The number of CPUs requested which is also used for threading, defaults to 8.
+    :param mem: Hail batch job memory, defaults to "highmen".
+    :param storage: Hail batch job storage, defaults to "100G".
+    :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
     :param image: Docker image for eagle job, defaults to "gcr.io/broad-mpg-gnomad/lai_phasing:latest".
     :return: Batch job
     """
@@ -123,8 +123,8 @@ def rfmix(
     sample_map: str,
     rf_genetic_map: str,
     mem: str = "highmem",
-    storage: str = "50G",
-    cpu: int = 8,
+    storage: str = "100G",
+    cpu: int = 16,
     image: str = "gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
 ) -> hb.Batch.new_job:
     """
@@ -137,8 +137,8 @@ def rfmix(
     :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
     :param rf_genetic_map: HapMap genetic map from SNP base pair positions to genetic coordinates in centimorgans.
     :param mem: Hail batch job memory, defaults to "highmem".
-    :param storage: Hail batch job storage, defaults to "50G".
-    :param cpu: The number of CPUs requested which is also used for threading, defaults to 8.
+    :param storage: Hail batch job storage, defaults to "100G".
+    :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
     :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_rfmix:latest".
     :return: Hail batch job
     """
@@ -575,7 +575,7 @@ if __name__ == "__main__":
         "--tractor-mem", default="highmem", help="Memory for Tractor batch job.",
     )
     tractor_args.add_argument(
-        "--tractor-storage", default="100G", help="Storage for Tractor batch job.",
+        "--tractor-storage", default="200G", help="Storage for Tractor batch job.",
     )
     tractor_args.add_argument(
         "--tractor-cpu", default=16, help="CPU for Tractor batch job.",
@@ -608,7 +608,7 @@ if __name__ == "__main__":
         "--vcf-mem", default="highmem", help="Memory for VCF generation batch job.",
     )
     vcf_args.add_argument(
-        "--vcf-storage", default="100G", help="Storage for VCF generation batch job.",
+        "--vcf-storage", default="200G", help="Storage for VCF generation batch job.",
     )
     vcf_args.add_argument(
         "--vcf-cpu", default=16, help="CPU for VCF generation batch job.",
