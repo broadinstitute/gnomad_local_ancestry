@@ -574,10 +574,10 @@ if __name__ == "__main__":
     tractor_args.add_argument(
         "--tractor-mem", default="highmem", help="Memory for Tractor batch job.",
     )
-    lai_args.add_argument(
+    tractor_args.add_argument(
         "--tractor-storage", default="100G", help="Storage for Tractor batch job.",
     )
-    lai_args.add_argument(
+    tractor_args.add_argument(
         "--tractor-cpu", default=16, help="CPU for Tractor batch job.",
     )
     tractor_args.add_argument(
@@ -605,13 +605,13 @@ if __name__ == "__main__":
         action="store_true",
     )
     vcf_args.add_argument(
-        "--vcf-mem", default="highmem", help="Memory for Tractor batch job.",
+        "--vcf-mem", default="highmem", help="Memory for VCF generation batch job.",
     )
-    lai_args.add_argument(
-        "--vcf-storage", default="100G", help="Storage for Tractor batch job.",
+    vcf_args.add_argument(
+        "--vcf-storage", default="100G", help="Storage for VCF generation batch job.",
     )
-    lai_args.add_argument(
-        "--vcf-cpu", default=16, help="CPU for Tractor batch job.",
+    vcf_args.add_argument(
+        "--vcf-cpu", default=16, help="CPU for VCF generation batch job.",
     )
     vcf_args.add_argument(
         "--vcf-image",
