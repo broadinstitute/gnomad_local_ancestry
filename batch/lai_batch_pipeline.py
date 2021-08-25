@@ -18,8 +18,8 @@ def check_args(parser, args):
     """
     Check passed args to ensure pipeline can run properly.
 
-    :param parser: arg parser.
-    :param args: Arg's from argparser.
+    :param parser: Arg parser.
+    :param args: Args from argparser.
     """
     if not (
         args.run_eagle
@@ -231,8 +231,8 @@ def tractor(
     :param zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param zip_output: Whether to zip the tool's output files.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
-    :param mem: Hail batch job memory, defaults to "standard".
-    :param storage: Hail batch job storage, deaults to "50G".
+    :param mem: Hail batch job memory, defaults to "highmem".
+    :param storage: Hail batch job storage, defaults to "200G".
     :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest".
     :return: Hail Batch job
     """
@@ -281,8 +281,8 @@ def generate_lai_vcf(
     :param ancs: Number of ancestral populations within the MSP file.
     :param zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
-    :param mem: Hail batch job memory, defaults to "standard".
-    :param storage: Hail batch job storage, deaults to "50G".
+    :param mem: Hail batch job memory, defaults to "highmem".
+    :param storage: Hail batch job storage, defaults to "200G".
     :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest".
     :return: Hail Batch job
     """
@@ -309,7 +309,7 @@ def main(args):
         if args.run_eagle:
             if args.sample_vcf:
                 vcf = b.read_input(args.sample_vcf)
-                e = eagle(b, vcf, contig)
+                e = eagle(b, vcf, contig, image=args.eagle_image)
                 b.write_output(
                     e.ofile, dest=f"{output_path}eagle/output/phased_chr{contig}"
                 )
@@ -420,7 +420,7 @@ if __name__ == "__main__":
     phasing_args = p.add_argument_group("Phasing", "Arguments for phasing samples")
     lai_args = p.add_argument_group(
         "Local Ancestry Inference",
-        "Arguments for running local ancestry inference on samples",
+        "Arguments for running local ancestry inference tools (rfmix, xgmix) on samples",
     )
     tractor_args = p.add_argument_group(
         "Tractor", "Arguments for running Tractor on samples"

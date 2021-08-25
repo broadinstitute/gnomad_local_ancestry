@@ -1,7 +1,8 @@
 # noqa: D100
 import argparse
-import hail as hl
 import logging
+
+import hail as hl
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
@@ -19,9 +20,10 @@ def import_lai_mt(
 
     :param anc: File's ancestry.
     :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
-    :param file_extension: If zipped, zip file extension, defaults to ''
-    :param dosage: Whether the ancestry file being converted is dosage. When true, dosage file will be converted and when false the haps file will be converted. Defaults to True
-    :return: hl.MatrixTable
+    :param file_extension: If zipped, zip file extension, defaults to ''.
+    :param dosage: Whether the ancestry file being converted is a dosage file. 
+    When true, dosage file will be converted, and when false, the haps file will be converted. Defaults to True.
+    :return: Dosage or hapcounts MatrixTable.
     """
     row_fields = {
         "CHROM": hl.tstr,
@@ -37,44 +39,37 @@ def import_lai_mt(
     )
     mt = mt.key_rows_by().drop("row_id", "ID")
 
-    variant = hl.parse_variant(
-        mt.CHROM + ":" + mt.POS + ":" + mt.REF + ":" + mt.ALT, reference_genome="GRCh38"
-    )
-    mt = mt.key_rows_by(locus=variant["locus"], alleles=variant["alleles"]).drop(
-        "CHROM", "POS", "REF", "ALT"
-    )
-    return mt
+    return mt.key_rows_by(locus=hl.locus(mt.CHROM, mt.POS), alleles=[mt.ref, mt.alt]).drop("CHROM", "POS", "REF", "ALT")
 
 
 def generate_anc_mt_dict(
-    ancs: dict, output_path: str = "tractor/test_path", file_extension: str = ""
-) -> dict:
+    ancs: Dict[int, str], output_path: str = "tractor/test_path", file_extension: str = ""
+) -> Dict[str, hl.MatrixTable]:
     """
     Generate dictionary where the key is ancestry and values are the ancestry's corresponding MatrixTable with hap and dosage annotations.
 
     :param ancs: Dictionary with keys as numerical value of msp file and values as the corresponding ancestry.
     :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
     :param file_extension: If zipped, zip file extension, defaults to ''.
-    :return: Dictionary with ancestry(key) and corresponding Matrixtable(value).
+    :return: Dictionary with ancestry (key) and corresponding Matrixtable(value).
     """
     logger.info(f"Generating ancestry matrixtable dictionary, ancestries are -> {ancs}")
     ancestry_mts = {}
     for num, anc in ancs.items():
         dos = import_lai_mt(num, output_path, file_extension, dosage=True)
         hap = import_lai_mt(num, output_path, file_extension, dosage=False)
-        dos = dos.annotate_entries(
+        dos = dos.transmute_entries(
             **{f"{anc}_dos": dos.x, f"{anc}_hap": hap[dos.row_key, dos.col_id].x}
         )
-        dos = dos.drop("x")
         ancestry_mts[anc] = dos
     return ancestry_mts
 
 
-def get_msp_ancestries(msp_file: str = "tractor/test.msp.tsv") -> dict:
+def get_msp_ancestries(msp_file: str = "tractor/test.msp.tsv") -> Dict[int, str]:
     """
-    Parse msp header into dictionary of numeric keys and corresponding ancestry as values.
+    Parse msp header into dictionary of numeric keys and corresponding ancestry strings as values.
 
-    :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv"
+    :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv".
     :return: Dictionary of numeric keys and corresponding ancestry as values.
     """
     ancestries = ""
@@ -93,15 +88,16 @@ def get_msp_ancestries(msp_file: str = "tractor/test.msp.tsv") -> dict:
 
 def generate_joint_vcf(
     msp_file: str, tractor_output: str, output_path: str, is_zipped: bool = True
-):
+) -> None:
     """
-    Generate a joint VCF from Trator's output files with ancestry-specific AC,AN,AF annotations.
+    Generate a joint VCF from Trator's output files with ancestry-specific AC, AN, AF annotations.
 
-    :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv"
-    :param tractor_output_filepaths: Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run
+    :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv".
+    :param tractor_output_filepaths: Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run.
+    :return: None; exports VCF to output path.
     """
     logger.info(
-        f"Generating joint VCF with annotated AFs. msp file is: {msp_file}, tractor output is {tractor_output}, is_zipped is {is_zipped}"
+        "Generating joint VCF with annotated AFs. msp file is: %s, tractor output is %s, is_zipped is %s", msp_file, tractor_output, is_zipped
     )
     file_extension = ".gz" if is_zipped else ""
     ancestries = get_msp_ancestries(msp_file)
@@ -146,7 +142,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--tractor-output",
-        help="Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run",
+        help="Path to tractor output files without .hapcount.txt and .dosage.txt extensions, e.g. /Tractor/output/test_run",
         required=True,
     )
     parser.add_argument(
