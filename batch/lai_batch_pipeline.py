@@ -1,14 +1,10 @@
 # noqa: D100
 import logging
 
+from gnomad.utils.slack import slack_notifications
 import hailtop.batch as hb
 
-from gnomad.utils.slack import slack_notifications
-
-from batch.batch_utils import (
-    init_arg_parser,
-    run_batch,
-)
+from batch.batch_utils import init_arg_parser, run_batch
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s", level=logging.INFO
@@ -334,7 +330,8 @@ def main(args):
                     image=args.eagle_image,
                 )
                 b.write_output(
-                    e.ofile, dest=f"{output_path}eagle/output/phased_chr{contig}"
+                    e.ofile,
+                    dest=f"{output_path}chr{contig}/eagle/output/phased_chr{contig}",
                 )
             if args.ref_vcf:
                 ref_vcf = b.read_input(args.ref_vcf)
@@ -348,7 +345,8 @@ def main(args):
                     image=args.eagle_image,
                 )
                 b.write_output(
-                    ref_e.ofile, dest=f"{output_path}eagle/phased_reference_chr{contig}"
+                    ref_e.ofile,
+                    dest=f"{output_path}chr{contig}/eagle/phased_reference_chr{contig}",
                 )
 
         if args.run_rfmix or args.run_xgmix:
@@ -378,8 +376,9 @@ def main(args):
                     cpu=args.lai_cpu,
                     image=args.rfmix_image,
                 )
-                b.write_output(lai.ofile, dest=f"{output_path}rfmix/output/chr{contig}")
-                
+                b.write_output(
+                    lai.ofile, dest=f"{output_path}chr{contig}/rfmix/output/chr{contig}"
+                )
             if args.run_xgmix:
                 lai = xgmix(
                     b,
@@ -393,7 +392,9 @@ def main(args):
                     cpu=args.lai_cpu,
                     image=args.xgmix_image,
                 )
-                b.write_output(lai.ofile, dest=f"{output_path}xgmix/output/chr{contig}")
+                b.write_output(
+                    lai.ofile, dest=f"{output_path}chr{contig}/xgmix/output/chr{contig}"
+                )
 
         if args.run_tractor:
             # Both inputs have a specified extension so batch can find the file and pass it to Tractor which expects files without extensions
@@ -405,7 +406,7 @@ def main(args):
             phased_sample_vcf = (
                 b.read_input_group(**{"vcf.gz": args.phased_sample_vcf})
                 if args.phased_sample_vcf
-                else e.ofile.vcf
+                else e.ofile
             )
             t = tractor(
                 b,
@@ -420,10 +421,14 @@ def main(args):
                 cpu=args.tractor_cpu,
                 image=args.tractor_image,
             )
-            b.write_output(t.ofile, dest=f"{output_path}tractor/output/chr{contig}")
+            b.write_output(
+                t.ofile, dest=f"{output_path}chr{contig}/tractor/output/chr{contig}"
+            )
 
         if args.make_lai_vcf:
-            msp_file = b.read_input(args.msp_file) if args.msp_file else lai.ofile
+            msp_file = (
+                b.read_input(args.msp_file) if args.msp_file else lai.ofile["msp.tsv"]
+            )
             rg_def = {}
             if args.tractor_output:
                 for i in range(args.n_ancs):
@@ -451,7 +456,8 @@ def main(args):
                 image=args.vcf_image,
             )
             b.write_output(
-                v.ofile, dest=f"{output_path}tractor/output/chr{contig}_annotated"
+                v.ofile,
+                dest=f"{output_path}chr{contig}/tractor/output/chr{contig}_annotated",
             )
 
 
@@ -524,7 +530,7 @@ if __name__ == "__main__":
         "--lai-mem", default="highmem", help="Memory for lai tool batch job.",
     )
     lai_args.add_argument(
-        "--lai-storage", default="100G", help="Storage for LAI tool batch job.",
+        "--lai-storage", default="100G", help="Storage for lai tool batch job.",
     )
     lai_args.add_argument(
         "--lai-cpu", default=16, help="CPU for LAI tool batch job.",
@@ -603,7 +609,7 @@ if __name__ == "__main__":
     )
     vcf_args.add_argument(
         "--make-lai-vcf",
-        help="Generate single VCF with ancestry AFs from tractor output."
+        help="Generate single VCF with ancestry AFs from tractor output.",
         action="store_true",
     )
     vcf_args.add_argument(
