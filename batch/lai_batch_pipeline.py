@@ -1,5 +1,6 @@
 # noqa: D100
 import logging
+
 import hailtop.batch as hb
 
 from gnomad.utils.slack import slack_notifications
@@ -21,6 +22,7 @@ def check_args(parser, args) -> None:
 
     :param parser: Arg parser.
     :param args: Args from argparser.
+    :return: None; will print error to stdout if arguments do not pass checks.
     """
     if not (
         args.run_eagle
@@ -78,7 +80,7 @@ def eagle(
     batch: hb.Batch,
     vcf: str,
     contig: str,
-    mem: str = "highmen",
+    mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
     image: str = "gcr.io/broad-mpg-gnomad/lai_phasing:latest",
@@ -89,11 +91,11 @@ def eagle(
     :param batch: Hail batch object.
     :param vcf: VCF to phase.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
-    :param mem: Hail batch job memory, defaults to "highmen".
+    :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
     :param image: Docker image for eagle job, defaults to "gcr.io/broad-mpg-gnomad/lai_phasing:latest".
-    :return: Batch job
+    :return: Batch job.
     """
     e = batch.new_job(name=f"Eagle - chr{contig}")
     e.cpu(cpu)
@@ -140,7 +142,7 @@ def rfmix(
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
     :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_rfmix:latest".
-    :return: Hail batch job
+    :return: Hail batch job.
     """
     r = batch.new_job(name=f"RFMix - chr{contig}")
     r.memory(mem)
@@ -191,7 +193,7 @@ def xgmix(
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: Number of CPUs requested, defaults to 16.
     :param image: XGMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_xgmix:latest".
-    :return: Hail batch job
+    :return: Hail batch job.
     """
     x = batch.new_job(name=f"XGMix - chr{contig}")
     x.memory(mem)
@@ -229,15 +231,15 @@ def tractor(
     :param batch: Hail batch object.
     :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
     :param vcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
-    :param n_ancs: Number of ancestral population within the MSP file.
+    :param n_ancs: Number of ancestral populations within the MSP file.
     :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param zip_output: Whether to zip the tool's output files.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
-    :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest".
-    :return: Hail Batch job
+    :param image: Tractor Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_tractor:latest".
+    :return: Hail Batch job.
     """
     t = batch.new_job(name=f"Tractor - chr{contig}")
     t.storage(storage)
@@ -289,7 +291,7 @@ def generate_lai_vcf(
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
     :param image: VCF Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_vcf:latest".
-    :return: Hail Batch job
+    :return: Hail Batch job.
     """
     v = batch.new_job(name=f"Generate final VCF - chr{contig}")
     v.storage(storage)
@@ -297,7 +299,6 @@ def generate_lai_vcf(
     v.memory(mem)
     v.cpu(cpu)
     v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
-
     cmd = f"""
         python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if input_zipped else ""} --output-path {v.ofile}
         """
@@ -306,14 +307,14 @@ def generate_lai_vcf(
 
 
 def main(args):
-    """Run batch local ancestry inference pipeline.
+    """Run batch local ancestry inference (LAI) pipeline.
 
-    The pipeline has four steps that can run independently or in series usings user input or a previous step's output.
+    The pipeline has four steps that can run independently or in series using either user input or a previous step's output:
 
         - Phase a sample VCF and a reference VCF using Eagle.
         - Run a local ancestry tool, either RFMix or XGMix, on phased sample VCF.
-        - Run Tractor to extract ancestral components from the phased VCF and generate a VCF, dosage counts, and haplotpye counts per ancestry.
-        - Generate a single VCF with ancestry-specific call statistics ( AC, AN, AF).
+        - Run Tractor to extract ancestral components from the phased VCF and generate a VCF, dosage counts, and haplotype counts per ancestry.
+        - Generate a single VCF with ancestry-specific call statistics (AC, AN, AF).
     """
     contig = args.contig
     logger.info("Running gnomAD LAI on chr%s", contig)
@@ -378,6 +379,7 @@ def main(args):
                     image=args.rfmix_image,
                 )
                 b.write_output(lai.ofile, dest=f"{output_path}rfmix/output/chr{contig}")
+                
             if args.run_xgmix:
                 lai = xgmix(
                     b,
@@ -522,10 +524,10 @@ if __name__ == "__main__":
         "--lai-mem", default="highmem", help="Memory for lai tool batch job.",
     )
     lai_args.add_argument(
-        "--lai-storage", default="100G", help="Storage for lai tool batch job.",
+        "--lai-storage", default="100G", help="Storage for LAI tool batch job.",
     )
     lai_args.add_argument(
-        "--lai-cpu", default=16, help="CPU for lai tool batch job.",
+        "--lai-cpu", default=16, help="CPU for LAI tool batch job.",
     )
     lai_args.add_argument(
         "--phased-ref-vcf",
@@ -601,7 +603,7 @@ if __name__ == "__main__":
     )
     vcf_args.add_argument(
         "--make-lai-vcf",
-        help="Generate single VCF with ancestry AFs from tractor output, e.g. /Tractor/output/test_run",
+        help="Generate single VCF with ancestry AFs from tractor output."
         action="store_true",
     )
     vcf_args.add_argument(

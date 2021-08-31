@@ -24,7 +24,7 @@ def import_lai_mt(
     :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
     :param file_extension: If zipped, zip file extension, defaults to ''.
     :param dosage: Whether the ancestry file being converted is a dosage file.
-    When true, dosage file will be converted, and when false, the haps file will be converted. Defaults to True.
+        When true, dosage file will be converted, and when false, haps file will be converted. Defaults to True.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
     :return: Dosage or hapcounts MatrixTable.
     """
@@ -60,7 +60,7 @@ def generate_anc_mt_dict(
     :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
     :param file_extension: If zipped, zip file extension, defaults to ''.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
-    :return: Dictionary with ancestry (key) and corresponding Matrixtable(value).
+    :return: Dictionary with ancestry (key) and corresponding Matrixtable (value).
     """
     logger.info(
         "Generating ancestry matrixtable dictionary, ancestries are -> %s", ancs
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-path",
-        help="Optional output path for files and file prefix, e.g. ~/test_data/test1 .",
+        help="Optional output path for files and file prefix, e.g. ~/test_data/test1",
     )
     parser.add_argument(
         "--is-zipped", help="Input files are gzipped.", action="store_true"
