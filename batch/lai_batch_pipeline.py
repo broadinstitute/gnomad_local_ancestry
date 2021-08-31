@@ -1,10 +1,12 @@
 # noqa: D100
+import argparse
 import logging
 
 from gnomad.utils.slack import slack_notifications
 import hailtop.batch as hb
+from typing import Any
 
-from batch.batch_utils import init_arg_parser, run_batch
+from batch.batch_utils import init_arg_parser, run_batch, init_job
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s", level=logging.INFO
@@ -12,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def check_args(parser, args) -> None:
+def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
     """
     Check passed args to ensure pipeline can run properly.
 
@@ -148,6 +150,7 @@ def rfmix(
     r.declare_resource_group(
         ofile={"msp.tsv": "{root}.msp.tsv", "fb.tsv": "{root}.fb.tsv"}
     )
+
     cmd = f"""
     ./rfmix \
         -f {sample_pvcf} \
@@ -160,6 +163,7 @@ def rfmix(
         --reanalyze-reference \
         -o {r.ofile}
     """
+
     r.command(cmd)
     return r
 
@@ -199,11 +203,13 @@ def xgmix(
     x.declare_resource_group(
         ofile={"msp.tsv": "{root}.msp.tsv", "fb.tsv": "{root}.fb.tsv"}
     )
+
     cmd = f"""
     python3 XGMIX.py {sample_pvcf} {xg_genetic_map} /io/tmp/xgmix/output chr{contig} False {ref_pvcf} {sample_map}
     ln -s /io/tmp/xgmix/output/output.msp.tsv {x.ofile['msp.tsv']}
     ln -s /io/tmp/xgmix/output/output.fb.tsv {x.ofile['fb.tsv']}
     """
+
     x.command(cmd)
     return x
 
@@ -256,9 +262,11 @@ def tractor(
     t.declare_resource_group(ofile=rg_def)
     input_zipped = "--zipped" if input_zipped else ""
     zip_output = "--zip-output" if zip_output else ""
+
     cmd = f"""
-        python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={n_ancs} {input_zipped} {zip_output} --output-path={t.ofile}
-        """
+    python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={n_ancs} {input_zipped} {zip_output} --output-path={t.ofile}
+    """
+
     t.command(cmd)
     return t
 
@@ -295,9 +303,11 @@ def generate_lai_vcf(
     v.memory(mem)
     v.cpu(cpu)
     v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
+
     cmd = f"""
-        python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if input_zipped else ""} --output-path {v.ofile}
-        """
+    python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if input_zipped else ""} --output-path {v.ofile}
+    """
+
     v.command(cmd)
     return v
 
@@ -312,13 +322,15 @@ def main(args):
         - Run Tractor to extract ancestral components from the phased VCF and generate a VCF, dosage counts, and haplotype counts per ancestry.
         - Generate a single VCF with ancestry-specific call statistics (AC, AN, AF).
     """
-    contig = args.contig
+    contig = str(args.contig)
+    contig = contig[3:] if contig.startswith("chr") else contig
     logger.info("Running gnomAD LAI on chr%s", contig)
     with run_batch(args, f"LAI - chr{contig}") as b:
         output_path = args.output_bucket
 
         if args.run_eagle:
             if args.sample_vcf:
+                logger.info("Running eagle on sample VCF...")
                 vcf = b.read_input(args.sample_vcf)
                 e = eagle(
                     b,
@@ -334,6 +346,7 @@ def main(args):
                     dest=f"{output_path}chr{contig}/eagle/output/phased_chr{contig}",
                 )
             if args.ref_vcf:
+                logger.info("Running eagle on reference VCF...")
                 ref_vcf = b.read_input(args.ref_vcf)
                 ref_e = eagle(
                     b,
@@ -364,6 +377,7 @@ def main(args):
             )
 
             if args.run_rfmix:
+                logger.info("Running Local Ancestry Inference tool RFMix v2...")
                 lai = rfmix(
                     b,
                     phased_sample_vcf,
@@ -380,6 +394,7 @@ def main(args):
                     lai.ofile, dest=f"{output_path}chr{contig}/rfmix/output/chr{contig}"
                 )
             if args.run_xgmix:
+                logger.info("Running Local Ancestry Inference tool XGMix...")
                 lai = xgmix(
                     b,
                     phased_sample_vcf,
@@ -397,6 +412,7 @@ def main(args):
                 )
 
         if args.run_tractor:
+            logger.info("Running Tractor...")
             # Both inputs have a specified extension so batch can find the file and pass it to Tractor which expects files without extensions
             msp_file = (
                 b.read_input_group(**{"msp.tsv": args.msp_file})
@@ -426,6 +442,7 @@ def main(args):
             )
 
         if args.make_lai_vcf:
+            logger.info("Generating output VCF...")
             msp_file = (
                 b.read_input(args.msp_file) if args.msp_file else lai.ofile["msp.tsv"]
             )
@@ -459,22 +476,27 @@ def main(args):
                 v.ofile,
                 dest=f"{output_path}chr{contig}/tractor/output/chr{contig}_annotated",
             )
+        logger.info("Batch LAI pipeline run complete!")
 
 
 if __name__ == "__main__":
     p = init_arg_parser(
-        default_cpu=8,
+        default_cpu=16,
         default_billing_project="broad-mpg-gnomad",
         default_temp_bucket="gnomad-batch",
     )
     multi_args = p.add_argument_group(
         "Multi-step use", "Arguments used by multiple steps"
     )
-    multi_args.add_argument("--contig", required=True, help="Chromosome to run LAI on.")
+    multi_args.add_argument(
+        "--contig",
+        required=True,
+        help="Chromosome to run LAI on with the 'chr' prefix.",
+    )
     multi_args.add_argument(
         "--output-bucket",
         required=True,
-        help="Google bucket path for results. Each tool will create a subfolder here.",
+        help="Google bucket path with final / included. Each steps' result will be written to within a chromosome subfolder here.",
     )
     multi_args.add_argument(
         "--slack-channel",
