@@ -476,7 +476,7 @@ def main(args):
                 v.ofile,
                 dest=f"{output_path}chr{contig}/tractor/output/chr{contig}_annotated",
             )
-        logger.info("Batch LAI pipeline run complete!")
+    logger.info("Batch LAI pipeline run complete!")
 
 
 if __name__ == "__main__":
