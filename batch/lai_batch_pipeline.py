@@ -96,11 +96,11 @@ def eagle(
     :return: Batch job.
     """
     e = batch.new_job(name=f"Eagle - chr{contig}")
-    e.cpu(cpu)
     e.memory(mem)
     e.storage(storage)
+    e.cpu(cpu)
     e.image(image)
-    e.declare_resource_group(ofile={"vcf": "{root}.vcf.gz"})
+    e.declare_resource_group(ofile={"vcf.gz": "{root}.vcf.gz"})
 
     cmd = f"""
     Eagle_v2.4.1/eagle \
@@ -217,7 +217,7 @@ def xgmix(
 def tractor(
     batch: hb.Batch,
     msp: str,
-    vcf: str,
+    pvcf: str,
     n_ancs: int,
     input_zipped: bool,
     zip_output: bool,
@@ -244,12 +244,12 @@ def tractor(
     :return: Hail Batch job.
     """
     t = batch.new_job(name=f"Tractor - chr{contig}")
-    t.storage(storage)
-    t.image(image)
     t.memory(mem)
+    t.storage(storage)
     t.cpu(cpu)
+    t.image(image)
     rg_def = {}
-    file_extension = {".gz" if zip_output else ""}
+    file_extension = ".gz" if zip_output else ""
     for i in range(n_ancs):
         rg_def[f"vcf{i}{file_extension}"] = f"{{root}}.anc{i}.vcf{file_extension}"
         rg_def[
@@ -264,7 +264,7 @@ def tractor(
     zip_output = "--zip-output" if zip_output else ""
 
     cmd = f"""
-    python3 ExtractTracts.py --msp {msp} --vcf {vcf} --num-ancs={n_ancs} {input_zipped} {zip_output} --output-path={t.ofile}
+    python3 ExtractTracts.py --msp {msp} --vcf {pvcf} --num-ancs={n_ancs} {input_zipped} {zip_output} --output-path={t.ofile}
     """
 
     t.command(cmd)
@@ -298,10 +298,10 @@ def generate_lai_vcf(
     :return: Hail Batch job.
     """
     v = batch.new_job(name=f"Generate final VCF - chr{contig}")
-    v.storage(storage)
-    v.image(image)
     v.memory(mem)
+    v.storage(storage)
     v.cpu(cpu)
+    v.image(image)
     v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
 
     cmd = f"""
@@ -322,7 +322,7 @@ def main(args):
         - Run Tractor to extract ancestral components from the phased VCF and generate a VCF, dosage counts, and haplotype counts per ancestry.
         - Generate a single VCF with ancestry-specific call statistics (AC, AN, AF).
     """
-    contig = str(args.contig)
+    contig = args.contig
     contig = contig[3:] if contig.startswith("chr") else contig
     logger.info("Running gnomAD LAI on chr%s", contig)
     with run_batch(args, f"LAI - chr{contig}") as b:
@@ -368,12 +368,12 @@ def main(args):
             phased_ref_vcf = (
                 b.read_input(args.phased_ref_vcf)
                 if args.phased_ref_vcf
-                else ref_e.ofile.vcf
+                else ref_e.ofile["vcf.gz"]
             )
             phased_sample_vcf = (
                 b.read_input(args.phased_sample_vcf)
                 if args.phased_sample_vcf
-                else e.ofile.vcf
+                else e.ofile["vcf.gz"]
             )
 
             if args.run_rfmix:
@@ -549,10 +549,10 @@ if __name__ == "__main__":
         "Arguments for running local ancestry inference tools (rfmix, xgmix) on samples",
     )
     lai_args.add_argument(
-        "--lai-mem", default="highmem", help="Memory for lai tool batch job.",
+        "--lai-mem", default="highmem", help="Memory for LAI tool batch job.",
     )
     lai_args.add_argument(
-        "--lai-storage", default="100G", help="Storage for lai tool batch job.",
+        "--lai-storage", default="100G", help="Storage for LAI tool batch job.",
     )
     lai_args.add_argument(
         "--lai-cpu", default=16, help="CPU for LAI tool batch job.",
