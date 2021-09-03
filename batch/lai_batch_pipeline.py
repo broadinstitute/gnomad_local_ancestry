@@ -1,10 +1,10 @@
 # noqa: D100
 import argparse
 import logging
+from typing import Any
 
 from gnomad.utils.slack import slack_notifications
 import hailtop.batch as hb
-from typing import Any
 
 from batch.batch_utils import init_arg_parser, run_batch, init_job
 
@@ -288,7 +288,6 @@ def generate_lai_vcf(
     :param batch: Hail batch object.
     :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
     :param tractor_output: Path to Tractor's output files.
-    :param ancs: Number of ancestral populations within the MSP file.
     :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mem: Hail batch job memory, defaults to "highmem".
