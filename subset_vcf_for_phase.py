@@ -1,16 +1,16 @@
+# noqa: D100
 import logging
-
-import hail as hl
 
 from gnomad.sample_qc.pipeline import filter_rows_for_qc
 from gnomad.utils.filtering import subset_samples_and_variants
+import hail as hl
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def subset_and_export_chr_vcfs(
+def main(
     mt_path: str,
     samples_path: str,
     output_bucket: str,
@@ -21,16 +21,18 @@ def subset_and_export_chr_vcfs(
     min_af: float = 0.001,
 ) -> hl.MatrixTable:
     """
-    Subset a matrix table to specified samples and across specified contigs, filter
-    on min_callrate of 0.9 and min_af of 0.001, then export each subsetted contig individually
-    :param mt: Path to atrixTable to subset from.
+    Subset a matrix table to specified samples and across specified contigs.
+
+    Subset and filter on min_callrate of 0.9 and min_af of 0.001. Export each subsetted contig individually.
+
+    :param mt: Path to MatrixTable to subset from.
     :param samples_path: Path to tsv of sample IDs with header 's'.
     :param output_bucket: Path to output bucket for contig MT and VCF.
     :param contigs: List of contigs as integers.
     :param sparse: Boolean of whether source MT is sparse. Defaults to True.
     :param gt_expr: Boolean of GT expression in MT. Defaults to 'LGT'.
-    :param min_callrate: Minimum variant callrate for variant QC.
-    :param min_af: Minimum allele frequency for variant QC.
+    :param min_callrate: Minimum variant callrate for variant QC. Defaults to 0.9.
+    :param min_af: Minimum allele frequency for variant QC. Defaults to 0.001.
     """
     logger.info(f"Running script on {contigs}...")
     whole_mt = hl.read_matrix_table(mt_path)
@@ -58,11 +60,22 @@ def subset_and_export_chr_vcfs(
         logger.info(
             f"Filtering to variants with greater than {min_callrate} callrate and {min_af} allele frequency"
         )
-        mt = filter_rows_for_qc(mt, min_callrate=min_callrate, min_af=min_af)
 
+        # Filter to release variants
+        s_ht = hl.read_table(
+            "gs://gcp-public-data--gnomad/release/3.1.1/ht/genomes/gnomad.genomes.v3.1.1.sites.ht"
+        )
+        mt = mt.filter_rows(hl.is_defined(s_ht[mt.row_key]))
+        mt = filter_rows_for_qc(
+            mt,
+            min_callrate=min_callrate,
+            min_af=min_af,
+            min_inbreeding_coeff_threshold=None,
+            min_hardy_weinberg_threshold=None,
+        )
         mt = mt.checkpoint(
             f"{output_bucket}{contig}/gnomad_{contig}_dense_bia_snps.mt",
-            _read_if_exists=True,
+            overwrite=True,
         )
         logger.info(
             f"Subsetted {contig} to {mt.rows().count()} variants and {mt.cols().count()} samples"
@@ -93,7 +106,7 @@ if __name__ == "__main__":
         "--min-callrate",
         help="Minimum callrate threshiold as float for variant QC",
         type=float,
-        default=0.9,
+        default=0.90,
     )
     parser.add_argument(
         "--min-af",
@@ -108,7 +121,7 @@ if __name__ == "__main__":
         required=True,
     )
     args = parser.parse_args()
-    subset_and_export_chr_vcfs(
+    main(
         mt_path=args.mt_path,
         samples_path=args.samples_path,
         output_bucket=args.output_bucket,
