@@ -1,13 +1,24 @@
 # noqa: D100
 import logging
 
+from gnomad.resources.config import (
+    gnomad_public_resource_configuration,
+    GnomadPublicResourceSource,
+)
+from gnomad.resources.grch38.gnomad import public_release
+from gnomad.resources.resource_utils import DataException
 from gnomad.sample_qc.pipeline import filter_rows_for_qc
 from gnomad.utils.filtering import subset_samples_and_variants
+from gnomad.utils.reference_genome import get_reference_genome
 import hail as hl
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+gnomad_public_resource_configuration.source = (
+    GnomadPublicResourceSource.GOOGLE_CLOUD_PUBLIC_DATASETS
+)
 
 
 def main(
@@ -25,8 +36,8 @@ def main(
 
     Subset and filter on min_callrate of 0.9 and min_af of 0.001. Export each subsetted contig individually.
 
-    :param mt: Path to MatrixTable to subset from.
-    :param samples_path: Path to tsv of sample IDs with header 's'.
+    :param mt_path: Path to MatrixTable to subset from.
+    :param samples_path: Path to TSV of sample IDs to subset to. The TSV must have a header of 's'.
     :param output_bucket: Path to output bucket for contig MT and VCF.
     :param contigs: List of contigs as integers.
     :param sparse: Boolean of whether source MT is sparse. Defaults to True.
@@ -35,19 +46,27 @@ def main(
     :param min_af: Minimum allele frequency for variant QC. Defaults to 0.001.
     """
     logger.info(f"Running script on {contigs}...")
-    whole_mt = hl.read_matrix_table(mt_path)
+    full_mt = hl.read_matrix_table(mt_path)
     for contig in contigs:
         contig = f"chr{contig}"
         logger.info(f"Subsetting {contig}...")
         mt = hl.filter_intervals(
-            whole_mt, [hl.parse_locus_interval(contig, reference_genome="GRCh38")]
+            full_mt, [hl.parse_locus_interval(contig, reference_genome=get_reference_genome(full_mt.locus))]
         )
+        if 's' not in hl.import_table("gs://gnomad-julia/test_sample_path.tsv", no_header=False).row.keys():
+            raise DataException("The TSV provided by `sample_path` must include a header with a column labeled `s` for the sample IDs to keep in the subset.")
+
         mt = subset_samples_and_variants(
             mt, sample_path=samples_path, sparse=sparse, gt_expr=gt_expr
         )
 
         if sparse:
-            mt = mt.key_rows_by("locus", "alleles")
+            mt = hl.MatrixTable(
+            hl.ir.MatrixKeyRowsBy(
+                mt._mir, ["locus", "alleles"], is_sorted=True
+            )  # Prevents hail from running sort on genotype MT which is already sorted by a unique locus
+        )
+
             mt = hl.experimental.sparse_split_multi(mt, filter_changed_loci=True)
             mt = hl.experimental.densify(mt)
             mt = mt.filter_rows(hl.len(mt.alleles) > 1).drop(
@@ -61,11 +80,10 @@ def main(
             f"Filtering to variants with greater than {min_callrate} callrate and {min_af} allele frequency"
         )
 
-        # Filter to release variants
-        s_ht = hl.read_table(
-            "gs://gcp-public-data--gnomad/release/3.1.1/ht/genomes/gnomad.genomes.v3.1.1.sites.ht"
+        logger.info(
+            f"Filtering to gnomAD v3.1.1 release variants"
         )
-        mt = mt.filter_rows(hl.is_defined(s_ht[mt.row_key]))
+        mt = mt.filter_rows(hl.is_defined(public_release("genomes").ht()[mt.row_key]))
         mt = filter_rows_for_qc(
             mt,
             min_callrate=min_callrate,
@@ -90,7 +108,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--mt-path", help="MatrixTable to subset from", required=True)
-    parser.add_argument("--samples-path", help="TSV of samples")
+    parser.add_argument("--samples-path", help="TSV of samples, expects the TSV to have a header with the label `s`")
     parser.add_argument(
         "--output-bucket", help="Bucket for MTs and VCFs", required=True
     )
