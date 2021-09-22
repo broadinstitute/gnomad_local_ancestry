@@ -53,7 +53,7 @@ def main(
         mt = hl.filter_intervals(
             full_mt, [hl.parse_locus_interval(contig, reference_genome=get_reference_genome(full_mt.locus))]
         )
-        if 's' not in hl.import_table("gs://gnomad-julia/test_sample_path.tsv", no_header=False).row.keys():
+        if 's' not in hl.import_table(samples_path, no_header=False).row.keys():
             raise DataException("The TSV provided by `sample_path` must include a header with a column labeled `s` for the sample IDs to keep in the subset.")
 
         mt = subset_samples_and_variants(
@@ -66,12 +66,10 @@ def main(
                 mt._mir, ["locus", "alleles"], is_sorted=True
             )  # Prevents hail from running sort on genotype MT which is already sorted by a unique locus
         )
-
+            mt = mt.drop("gvcf_info")
             mt = hl.experimental.sparse_split_multi(mt, filter_changed_loci=True)
             mt = hl.experimental.densify(mt)
-            mt = mt.filter_rows(hl.len(mt.alleles) > 1).drop(
-                "gvcf_info"
-            )  # Note: This step is sparse-specific, removing monoallelic sites after densifying
+            mt = mt.filter_rows(hl.len(mt.alleles) > 1) # Note: This step is sparse-specific, removing monoallelic sites after densifying
         else:
             mt = hl.split_multi_hts(mt)
 
