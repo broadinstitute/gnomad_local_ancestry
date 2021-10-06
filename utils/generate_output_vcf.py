@@ -3,12 +3,22 @@ import argparse
 import logging
 from typing import Dict
 
+from gnomad.resources.config import (
+    gnomad_public_resource_configuration,
+    GnomadPublicResourceSource,
+)
+from gnomad.resources.grch38.gnomad import public_release
+from gnomad.utils.filtering import filter_to_adj
+from gnomad.utils.reference_genome import get_reference_genome
 import hail as hl
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+gnomad_public_resource_configuration.source = (
+    GnomadPublicResourceSource.GOOGLE_CLOUD_PUBLIC_DATASETS
+)
 
 def import_lai_mt(
     anc: int,
@@ -30,7 +40,7 @@ def import_lai_mt(
     """
     row_fields = {
         "CHROM": hl.tstr,
-        "POS": hl.tstr,
+        "POS": hl.tint,
         "ID": hl.tstr,
         "REF": hl.tstr,
         "ALT": hl.tstr,
@@ -43,7 +53,7 @@ def import_lai_mt(
     mt = mt.key_rows_by().drop("row_id", "ID")
 
     return mt.key_rows_by(
-        locus=hl.locus(mt.CHROM, mt.POS), alleles=[mt.ref, mt.alt]
+        locus=hl.locus(mt.CHROM, mt.POS, reference_genome="GRCh38"), alleles=[mt.REF, mt.ALT]
     ).drop("CHROM", "POS", "REF", "ALT")
 
 
@@ -107,6 +117,7 @@ def get_msp_ancestries(msp_file: str = "tractor/test.msp.tsv") -> Dict[int, str]
 
 
 def generate_joint_vcf(
+    contig: int,
     msp_file: str,
     tractor_output: str,
     output_path: str,
@@ -116,6 +127,7 @@ def generate_joint_vcf(
     """
     Generate a joint VCF from Trator's output files with ancestry-specific AC, AN, AF annotations.
 
+    :param contig: Contig as integer present in files.
     :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv".
     :param tractor_output_filepaths: Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
@@ -141,6 +153,8 @@ def generate_joint_vcf(
     dos_hap_dict = {}
     callstat_dict = {}
     for anc, anc_mt in entry_ancs.items():
+        #Use the gnomad raw MT to set these to values to 0
+        #whenever the GT is not adj (may need to annotate gnomAD entries with adj first)
         dos_hap_dict.update(
             {
                 f"{anc}_dos": anc_mt[mt.row_key, mt.col_key][f"{anc}_dos"],
@@ -149,24 +163,46 @@ def generate_joint_vcf(
         )
 
     mt = mt.annotate_entries(**dos_hap_dict)
+
+    if args.filter_to_gnomad_adj:
+        #This step requires access to the private MTs
+        gnomad_mt = hl.read_matrix_table(f"gs://gnomad-mwilson/lai/subsets/chr{contig}/gnomad_chr{contig}_dense_bia_snps.mt")
+        gnomad_mt = filter_to_adj(gnomad_mt)
+        mt = mt.filter_entries(hl.is_defined(gnomad_mt[mt.row_key, mt.col_key]))
+
     for anc in anc_mts:
         callstat_dict.update(
             {
-                f"{anc}_AC": hl.agg.sum(mt[f"{anc}_dos"]),
-                f"{anc}_AN": hl.agg.sum(mt[f"{anc}_hap"]),
-                f"{anc}_AF": hl.if_else(
+                f"AC-{anc}": hl.agg.sum(mt[f"{anc}_dos"]),
+                f"AN-{anc}": hl.agg.sum(mt[f"{anc}_hap"]),
+                f"AF-{anc}": hl.if_else(
                     hl.agg.sum(mt[f"{anc}_hap"]) == 0,
                     0,
                     hl.agg.sum(mt[f"{anc}_dos"]) / hl.agg.sum(mt[f"{anc}_hap"]),
                 ),
+
             }
         )
+    gnomad_release = public_release("genomes").ht()
+    callstat_dict.update(
+        {
+            "gnomAD-AF-amr": gnomad_release[mt.row_key].freq[11]['AF'],
+            "gnomad-AF-nfe": gnomad_release[mt.row_key].freq[2]['AF'],
+            "gnomad-AF-afr": gnomad_release[mt.row_key].freq[8]['AF'],
+            "gnomad-AF-eas": gnomad_release[mt.row_key].freq[9]['AF'],
+        }
+    )
     ht = mt.annotate_rows(info=hl.struct(**callstat_dict)).rows()
     hl.export_vcf(ht, f"{output_path}_lai_annotated.vcf.bgz")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--contig",
+        help="Contig represented as int that is in the files",
+        required=True,
+    )
     parser.add_argument(
         "--msp-file", help="Output from LAI program like RFMix_v2.", required=True
     )
@@ -186,6 +222,11 @@ if __name__ == "__main__":
         "--min-partitions",
         help="Minimum number of partitions to use when reading in tsv files as hail MTs, defaults to 32.",
         default=32,
+    )
+    parser.add_argument(
+        "--filter-to-gnomad-adj",
+        help="Filter all entries to those with high quality GTs in gnomAD",
+        action="store_true",
     )
     args = parser.parse_args()
     generate_joint_vcf(**vars(args))
