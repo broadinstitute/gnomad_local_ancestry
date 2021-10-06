@@ -89,7 +89,7 @@ def main(
             min_af,
         )
         if args.gnomad_release_only:
-            logger.info("Filtering to gnomAD v3.1.1 release variants")
+            logger.info("Filtering to gnomAD v3.1 release variants")
             mt = mt.filter_rows(
                 hl.is_defined(public_release("genomes").ht()[mt.row_key])
             )
@@ -106,8 +106,8 @@ def main(
         logger.info(
             "Subsetted %s to %d variants and %d samples",
             contig,
-            mt.rows().count(),
-            mt.cols().count(),
+            mt.count_rows(),
+            mt.count_cols(),
         )
         hl.export_vcf(mt, f"{output_bucket}{contig}/{contig}_dense_bia_snps.vcf.bgz")
 
