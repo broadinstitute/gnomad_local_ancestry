@@ -123,6 +123,8 @@ def generate_joint_vcf(
     output_path: str,
     is_zipped: bool = True,
     min_partitions: int = 32,
+    mt_path_for_adj: str = '',
+    add_gnomad_af: bool = False,
 ) -> None:
     """
     Generate a joint VCF from Trator's output files with ancestry-specific AC, AN, AF annotations.
@@ -131,6 +133,8 @@ def generate_joint_vcf(
     :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv".
     :param tractor_output_filepaths: Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
+    :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
+    :param add_gnomad_af: Add gnomAD's population AFs for AMR, NFE, AFR, and EAS
     :return: None; exports VCF to output path.
     """
     logger.info(
@@ -164,11 +168,11 @@ def generate_joint_vcf(
 
     mt = mt.annotate_entries(**dos_hap_dict)
 
-    if args.filter_to_gnomad_adj:
-        #This step requires access to the private MTs
-        gnomad_mt = hl.read_matrix_table(f"gs://gnomad-mwilson/lai/subsets/chr{contig}/gnomad_chr{contig}_dense_bia_snps.mt")
-        gnomad_mt = filter_to_adj(gnomad_mt)
-        mt = mt.filter_entries(hl.is_defined(gnomad_mt[mt.row_key, mt.col_key]))
+    if mt_path_for_adj:
+        #This step requires access to  MTs generated from pipelines input VCF
+        adj_mt = hl.read_matrix_table(mt_path_for_adj)
+        adj_mt = filter_to_adj(adj_mt)
+        mt = mt.filter_entries(hl.is_defined(adj_mt[mt.row_key, mt.col_key]))
 
     for anc in anc_mts:
         callstat_dict.update(
@@ -183,15 +187,16 @@ def generate_joint_vcf(
 
             }
         )
-    gnomad_release = public_release("genomes").ht()
-    callstat_dict.update(
-        {
-            "gnomAD-AF-amr": gnomad_release[mt.row_key].freq[11]['AF'],
-            "gnomad-AF-nfe": gnomad_release[mt.row_key].freq[2]['AF'],
-            "gnomad-AF-afr": gnomad_release[mt.row_key].freq[8]['AF'],
-            "gnomad-AF-eas": gnomad_release[mt.row_key].freq[9]['AF'],
-        }
-    )
+    if add_gnomad_af:
+        gnomad_release = public_release("genomes").ht()
+        callstat_dict.update(
+            {
+                "gnomAD-AF-amr": gnomad_release[mt.row_key].freq[11]['AF'],
+                "gnomad-AF-nfe": gnomad_release[mt.row_key].freq[2]['AF'],
+                "gnomad-AF-afr": gnomad_release[mt.row_key].freq[8]['AF'],
+                "gnomad-AF-eas": gnomad_release[mt.row_key].freq[9]['AF'],
+            }
+        )
     ht = mt.annotate_rows(info=hl.struct(**callstat_dict)).rows()
     hl.export_vcf(ht, f"{output_path}_lai_annotated.vcf.bgz")
 
@@ -204,7 +209,7 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
-        "--msp-file", help="Output from LAI program like RFMix_v2.", required=True
+        "--msp-file", help="Output from LAI program like RFMix_v2", required=True
     )
     parser.add_argument(
         "--tractor-output",
@@ -220,12 +225,17 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--min-partitions",
-        help="Minimum number of partitions to use when reading in tsv files as hail MTs, defaults to 32.",
+        help="Minimum number of partitions to use when reading in tsv files as hail MTs, defaults to 32",
         default=32,
     )
     parser.add_argument(
-        "--filter-to-gnomad-adj",
-        help="Filter all entries to those with high quality GTs in gnomAD",
+        "--mt-path-for-adj",
+        help="Filter all entries in MT to those with high quality GTs, requires hail MatrixTable with GT, GQ, DP, and AB fields generated from pipeline input VCF",
+    )
+
+    parser.add_argument(
+        "--add-gnomad-af",
+        help="Add gnomAD population allele frequencies from AMR, NFE, AFR, and EAS",
         action="store_true",
     )
     args = parser.parse_args()
