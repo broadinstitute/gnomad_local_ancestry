@@ -6,7 +6,7 @@ from typing import Any
 from gnomad.utils.slack import slack_notifications
 import hailtop.batch as hb
 
-from batch.batch_utils import init_arg_parser, run_batch, init_job
+from batch.batch_utils import init_arg_parser, run_batch
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s", level=logging.INFO
@@ -277,6 +277,8 @@ def generate_lai_vcf(
     tractor_output: str,
     input_zipped: bool,
     contig: str,
+    mt_path_for_adj: str,
+    add_gnomad_af: bool,
     mem: str = "highmem",
     storage: str = "200G",
     cpu: int = 16,
@@ -290,6 +292,8 @@ def generate_lai_vcf(
     :param tractor_output: Path to Tractor's output files.
     :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
+    :param add_gnomad_af: Add gnomAD's population AFs for AMR, NFE, AFR, and EAS
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -303,8 +307,11 @@ def generate_lai_vcf(
     v.image(image)
     v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
 
+    if mt_path_for_adj:
+        mt_path_for_adj = f"--mt-path-for-adj {mt_path_for_adj}"
+
     cmd = f"""
-    python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if input_zipped else ""} --output-path {v.ofile}
+    python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {" --is-zipped" if input_zipped else ""} {mt_path_for_adj if mt_path_for_adj else ""} {"--add-gnomad-af" if add_gnomad_af else ""} --output-path {v.ofile}
     """
 
     v.command(cmd)
@@ -449,14 +456,11 @@ def main(args):
             if args.tractor_output:
                 for i in range(args.n_ancs):
                     rg_def[
-                        f"vcf{i}.gz"
-                    ] = f"{args.tractor_output}.anc{i}.vcf{'.gz' if args.zip_tractor_output else ''}"
+                        f"anc{i}.dosage.txt"
+                    ] = f"{args.tractor_output}.dos{i}.txt{'.gz' if args.zip_tractor_output else ''}"
                     rg_def[
-                        f"dos{i}.txt.gz"
-                    ] = f"{args.tractor_output}.anc{i}.dosage.txt{'.gz' if args.zip_tractor_output else ''}"
-                    rg_def[
-                        f"ancdos{i}.txt.gz"
-                    ] = f"{args.tractor_output}.anc{i}.hapcount.txt{'.gz' if args.zip_tractor_output else ''}"
+                        f"anc{i}.hapcount.txt"
+                    ] = f"{args.tractor_output}.ancdos{i}.txt{'.gz' if args.zip_tractor_output else ''}"
             tractor_output = (
                 b.read_input_group(**rg_def) if args.tractor_output else t.ofile
             )
@@ -466,6 +470,8 @@ def main(args):
                 tractor_output,
                 input_zipped=args.zip_tractor_output,
                 contig=contig,
+                mt_path_for_adj=args.mt_path_for_adj,
+                add_gnomad_af=args.add_gnomad_af,
                 mem=args.vcf_mem,
                 storage=args.vcf_storage,
                 cpu=args.vcf_cpu,
@@ -473,7 +479,7 @@ def main(args):
             )
             b.write_output(
                 v.ofile,
-                dest=f"{output_path}chr{contig}/tractor/output/chr{contig}_annotated",
+                dest=f"{output_path}chr{contig}/tractor/output/chr{contig}_annotated{'_adj'if args.mt_path_for_adj else ''}",
             )
     logger.info("Batch LAI pipeline run complete!")
 
@@ -631,6 +637,15 @@ if __name__ == "__main__":
     vcf_args.add_argument(
         "--make-lai-vcf",
         help="Generate single VCF with ancestry AFs from tractor output.",
+        action="store_true",
+    )
+    vcf_args.add_argument(
+        "--mt-path-for-adj",
+        help="Filter all entries in MT to those with high quality GTs, requires hail MatrixTable with GT, GQ, DP, and AB fields generated from pipeline input VCF",
+    )
+    vcf_args.add_argument(
+        "--add-gnomad-af",
+        help="Add gnomAD population allele frequencies from AMR, NFE, AFR, and EAS to output VCF",
         action="store_true",
     )
     vcf_args.add_argument(
