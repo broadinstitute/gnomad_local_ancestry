@@ -155,8 +155,6 @@ def generate_joint_vcf(
     dos_hap_dict = {}
     callstat_dict = {}
     for anc, anc_mt in entry_ancs.items():
-        #Use the gnomad raw MT to set these to values to 0
-        #whenever the GT is not adj (may need to annotate gnomAD entries with adj first)
         dos_hap_dict.update(
             {
                 f"{anc}_dos": anc_mt[mt.row_key, mt.col_key][f"{anc}_dos"],
@@ -167,7 +165,7 @@ def generate_joint_vcf(
     mt = mt.annotate_entries(**dos_hap_dict)
 
     if mt_path_for_adj:
-        #This step requires access to the MTs generated from the pipeline's subsetting VCF step
+        #This step requires access to the MTs generated from the pipeline's subsetting VCF step and will filter the MT to use only adj GTs
         logger.info("Filtering LAI output to adjusted genotypes...")
         adj_mt = hl.read_matrix_table(mt_path_for_adj)
         adj_mt = filter_to_adj(adj_mt)
