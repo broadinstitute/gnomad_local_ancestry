@@ -117,7 +117,6 @@ def get_msp_ancestries(msp_file: str = "tractor/test.msp.tsv") -> Dict[int, str]
 
 
 def generate_joint_vcf(
-    contig: int,
     msp_file: str,
     tractor_output: str,
     output_path: str,
@@ -129,7 +128,6 @@ def generate_joint_vcf(
     """
     Generate a joint VCF from Trator's output files with ancestry-specific AC, AN, AF annotations.
 
-    :param contig: Contig as integer present in files.
     :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv".
     :param tractor_output_filepaths: Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
@@ -169,17 +167,19 @@ def generate_joint_vcf(
     mt = mt.annotate_entries(**dos_hap_dict)
 
     if mt_path_for_adj:
-        #This step requires access to  MTs generated from pipelines input VCF
+        #This step requires access to the MTs generated from the pipeline's subsetting VCF step
+        logger.info("Filtering LAI output to adjusted genotypes...")
         adj_mt = hl.read_matrix_table(mt_path_for_adj)
         adj_mt = filter_to_adj(adj_mt)
         mt = mt.filter_entries(hl.is_defined(adj_mt[mt.row_key, mt.col_key]))
 
     for anc in anc_mts:
+        logger.info("Calculating and annotating %s call stats", anc)
         callstat_dict.update(
             {
-                f"AC-{anc}": hl.agg.sum(mt[f"{anc}_dos"]),
-                f"AN-{anc}": hl.agg.sum(mt[f"{anc}_hap"]),
-                f"AF-{anc}": hl.if_else(
+                f"AC_{anc}": hl.agg.sum(mt[f"{anc}_dos"]),
+                f"AN_{anc}": hl.agg.sum(mt[f"{anc}_hap"]),
+                f"AF_{anc}": hl.if_else(
                     hl.agg.sum(mt[f"{anc}_hap"]) == 0,
                     0,
                     hl.agg.sum(mt[f"{anc}_dos"]) / hl.agg.sum(mt[f"{anc}_hap"]),
@@ -188,13 +188,14 @@ def generate_joint_vcf(
             }
         )
     if add_gnomad_af:
+        logger.info("Annotating with gnomAD amr, nfe, afr, and eas allele frequencies...")
         gnomad_release = public_release("genomes").ht()
         callstat_dict.update(
             {
-                "gnomAD-AF-amr": gnomad_release[mt.row_key].freq[11]['AF'],
-                "gnomad-AF-nfe": gnomad_release[mt.row_key].freq[2]['AF'],
-                "gnomad-AF-afr": gnomad_release[mt.row_key].freq[8]['AF'],
-                "gnomad-AF-eas": gnomad_release[mt.row_key].freq[9]['AF'],
+                "gnomAD_AF_amr": gnomad_release[mt.row_key].freq[11]['AF'],
+                "gnomad_AF_nfe": gnomad_release[mt.row_key].freq[2]['AF'],
+                "gnomad_AF_afr": gnomad_release[mt.row_key].freq[8]['AF'],
+                "gnomad_AF_eas": gnomad_release[mt.row_key].freq[9]['AF'],
             }
         )
     ht = mt.annotate_rows(info=hl.struct(**callstat_dict)).rows()
@@ -203,11 +204,6 @@ def generate_joint_vcf(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--contig",
-        help="Contig represented as int that is in the files",
-        required=True,
-    )
     parser.add_argument(
         "--msp-file", help="Output from LAI program like RFMix_v2", required=True
     )
