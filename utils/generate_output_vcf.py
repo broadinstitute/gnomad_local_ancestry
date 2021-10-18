@@ -132,7 +132,7 @@ def generate_joint_vcf(
     :param tractor_output_filepaths: Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
     :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
-    :param add_gnomad_af: Add gnomAD's population AFs for AMR, NFE, AFR, and EAS
+    :param add_gnomad_af: Add gnomAD's population AFs for AMR, NFE, AFR, and EAS.
     :return: None; exports VCF to output path.
     """
     logger.info(

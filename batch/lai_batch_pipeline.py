@@ -293,7 +293,7 @@ def generate_lai_vcf(
     :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
-    :param add_gnomad_af: Add gnomAD's population AFs for AMR, NFE, AFR, and EAS
+    :param add_gnomad_af: Whether to add gnomAD's population AFs for AMR, NFE, AFR, and EAS
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
