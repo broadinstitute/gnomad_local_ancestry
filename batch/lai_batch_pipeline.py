@@ -311,7 +311,7 @@ def generate_lai_vcf(
         mt_path_for_adj = f"--mt-path-for-adj {mt_path_for_adj}"
 
     cmd = f"""
-    python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {" --is-zipped" if input_zipped else ""} {mt_path_for_adj if mt_path_for_adj else ""} {"--add-gnomad-af" if add_gnomad_af else ""} --output-path {v.ofile}
+    python3 generate_output_vcf.py --msp {msp} --tractor-output {tractor_output} {"--is-zipped" if input_zipped else ""} {mt_path_for_adj if mt_path_for_adj else ""} {"--add-gnomad-af" if add_gnomad_af else ""} --output-path {v.ofile}
     """
 
     v.command(cmd)
