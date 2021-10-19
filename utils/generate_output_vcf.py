@@ -168,7 +168,7 @@ def generate_joint_vcf(
     mt = mt.annotate_entries(**dos_hap_dict)
 
     if mt_path_for_adj:
-        # This step requires access to the MTs generated from the pipeline's subsetting VCF step and will filter the MT to use only adj GTs
+        # This step requires access to an MT generated from pipeline's input VCF because Tractor's output does not contain the fields necessary for adj filtering (GT, GQ, DP, AB).
         logger.info("Filtering LAI output to adjusted genotypes...")
         adj_mt = hl.read_matrix_table(mt_path_for_adj)
         adj_mt = filter_to_adj(adj_mt)
@@ -191,14 +191,13 @@ def generate_joint_vcf(
         logger.info(
             "Annotating with gnomAD allele frequencies from %s pops...", gnomad_af_pops
         )
-        pops = gnomad_af_pops
         gnomad_release = public_release("genomes").ht()
         callstat_dict.update(
             {
-                pop: gnomad_release[mt.row_key].freq[
+                f"gnomad_AF_{pop}": gnomad_release[mt.row_key].freq[
                     hl.eval(gnomad_release.freq_index_dict[f"{pop}-adj"])
                 ]["AF"]
-                for pop in pops
+                for pop in gnomad_af_pops
             }
         )
     ht = mt.annotate_rows(info=hl.struct(**callstat_dict)).rows()
@@ -208,33 +207,33 @@ def generate_joint_vcf(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--msp-file", help="Output from LAI program like RFMix_v2", required=True
+        "--msp-file", help="Output from LAI program like RFMix_v2.", required=True
     )
     parser.add_argument(
         "--tractor-output",
-        help="Path to tractor output files without .hapcount.txt and .dosage.txt extensions, e.g. /Tractor/output/test_run",
+        help="Path to tractor output files without .hapcount.txt and .dosage.txt extensions, e.g. /Tractor/output/test_run.",
         required=True,
     )
     parser.add_argument(
         "--output-path",
-        help="Optional output path for files and file prefix, e.g. ~/test_data/test1",
+        help="Optional output path for files and file prefix, e.g. ~/test_data/test1.",
     )
     parser.add_argument(
         "--is-zipped", help="Input files are gzipped.", action="store_true"
     )
     parser.add_argument(
         "--min-partitions",
-        help="Minimum number of partitions to use when reading in tsv files as hail MTs, defaults to 32",
+        help="Minimum number of partitions to use when reading in tsv files as hail MTs, defaults to 32.",
         default=32,
     )
     parser.add_argument(
         "--mt-path-for-adj",
-        help="Filter all entries in MT to those with high quality GTs, requires hail MatrixTable with GT, GQ, DP, and AB fields generated from pipeline input VCF",
+        help="Path to hail MatrixTable generated from pipeline input VCF. Must contain GT, GQ, DP, and AB fields. If MT path provided, script will filter to high quality GTs only.",
     )
 
     parser.add_argument(
         "--add-gnomad-af",
-        help="Add gnomAD population allele frequencies from AMR, NFE, AFR, and EAS",
+        help="Add gnomAD population allele frequencies from AMR, NFE, AFR, and EAS.",
         action="store_true",
     )
     args = parser.parse_args()
