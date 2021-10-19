@@ -293,7 +293,7 @@ def generate_lai_vcf(
     :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
-    :param add_gnomad_af: Whether to add gnomAD's population AFs for AMR, NFE, AFR, and EAS
+    :param add_gnomad_af: Whether to add gnomAD's population AFs for AMR, NFE, AFR, and EAS.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -641,11 +641,11 @@ if __name__ == "__main__":
     )
     vcf_args.add_argument(
         "--mt-path-for-adj",
-        help="Filter all entries in MT to those with high quality GTs, requires hail MatrixTable with GT, GQ, DP, and AB fields generated from pipeline input VCF",
+        help="Path to hail MatrixTable generated from pipeline input VCF. Must contain GT, GQ, DP, and AB fields. If MT path provided, script will filter to high quality GTs only.",
     )
     vcf_args.add_argument(
         "--add-gnomad-af",
-        help="Add gnomAD population allele frequencies from AMR, NFE, AFR, and EAS to output VCF",
+        help="Add gnomAD population allele frequencies from AMR, AFR, EAS, and NFE  to output VCF.",
         action="store_true",
     )
     vcf_args.add_argument(
