@@ -1,13 +1,23 @@
 # noqa: D100
 import argparse
 import logging
-from typing import Dict
+from typing import Dict, List
 
+from gnomad.resources.config import (
+    gnomad_public_resource_configuration,
+    GnomadPublicResourceSource,
+)
+from gnomad.resources.grch38.gnomad import public_release
+from gnomad.utils.filtering import filter_to_adj
 import hail as hl
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+gnomad_public_resource_configuration.source = (
+    GnomadPublicResourceSource.GOOGLE_CLOUD_PUBLIC_DATASETS
+)
 
 
 def import_lai_mt(
@@ -22,7 +32,7 @@ def import_lai_mt(
 
     :param anc: File's ancestry.
     :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
-    :param file_extension: If zipped, zip file extension, defaults to ''.
+    :param file_extension: If zipped, zip file extension, defaults to "".
     :param dosage: Whether the ancestry file being converted is a dosage file.
         When true, dosage file will be converted, and when false, haps file will be converted. Defaults to True.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
@@ -30,7 +40,7 @@ def import_lai_mt(
     """
     row_fields = {
         "CHROM": hl.tstr,
-        "POS": hl.tstr,
+        "POS": hl.tint,
         "ID": hl.tstr,
         "REF": hl.tstr,
         "ALT": hl.tstr,
@@ -43,7 +53,8 @@ def import_lai_mt(
     mt = mt.key_rows_by().drop("row_id", "ID")
 
     return mt.key_rows_by(
-        locus=hl.locus(mt.CHROM, mt.POS), alleles=[mt.ref, mt.alt]
+        locus=hl.locus(mt.CHROM, mt.POS, reference_genome="GRCh38"),
+        alleles=[mt.REF, mt.ALT],
     ).drop("CHROM", "POS", "REF", "ALT")
 
 
@@ -58,7 +69,7 @@ def generate_anc_mt_dict(
 
     :param ancs: Dictionary with keys as numerical value of msp file and values as the corresponding ancestry.
     :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
-    :param file_extension: If zipped, zip file extension, defaults to ''.
+    :param file_extension: If zipped, zip file extension, defaults to "".
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
     :return: Dictionary with ancestry (key) and corresponding Matrixtable (value).
     """
@@ -112,6 +123,9 @@ def generate_joint_vcf(
     output_path: str,
     is_zipped: bool = True,
     min_partitions: int = 32,
+    mt_path_for_adj: str = "",
+    add_gnomad_af: bool = False,
+    gnomad_af_pops: List[str] = ["amr", "afr", "eas", "nfe"],
 ) -> None:
     """
     Generate a joint VCF from Trator's output files with ancestry-specific AC, AN, AF annotations.
@@ -119,6 +133,9 @@ def generate_joint_vcf(
     :param msp_file: Path to msp file output by LAI tool like RFMixv2, defaults to "tractor/test.msp.tsv".
     :param tractor_output_filepaths: Path to tractor output files without .hapcount.txt and .dosage.txt, e.g. /Tractor/output/test_run.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
+    :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
+    :param add_gnomad_af: Add gnomAD's population AFs.
+    param gnomad_af_pops: gnomAD continental pop's for AF annotation.
     :return: None; exports VCF to output path.
     """
     logger.info(
@@ -149,16 +166,38 @@ def generate_joint_vcf(
         )
 
     mt = mt.annotate_entries(**dos_hap_dict)
+
+    if mt_path_for_adj:
+        # This step requires access to an MT generated from pipeline's input VCF because Tractor's output does not contain the fields necessary for adj filtering (GT, GQ, DP, AB).
+        logger.info("Filtering LAI output to adjusted genotypes...")
+        adj_mt = hl.read_matrix_table(mt_path_for_adj)
+        adj_mt = filter_to_adj(adj_mt)
+        mt = mt.filter_entries(hl.is_defined(adj_mt[mt.row_key, mt.col_key]))
+
     for anc in anc_mts:
+        logger.info("Calculating and annotating %s call stats", anc)
         callstat_dict.update(
             {
-                f"{anc}_AC": hl.agg.sum(mt[f"{anc}_dos"]),
-                f"{anc}_AN": hl.agg.sum(mt[f"{anc}_hap"]),
-                f"{anc}_AF": hl.if_else(
+                f"AC_{anc}": hl.agg.sum(mt[f"{anc}_dos"]),
+                f"AN_{anc}": hl.agg.sum(mt[f"{anc}_hap"]),
+                f"AF_{anc}": hl.if_else(
                     hl.agg.sum(mt[f"{anc}_hap"]) == 0,
                     0,
                     hl.agg.sum(mt[f"{anc}_dos"]) / hl.agg.sum(mt[f"{anc}_hap"]),
                 ),
+            }
+        )
+    if add_gnomad_af:
+        logger.info(
+            "Annotating with gnomAD allele frequencies from %s pops...", gnomad_af_pops
+        )
+        gnomad_release = public_release("genomes").ht()
+        callstat_dict.update(
+            {
+                f"gnomad_AF_{pop}": gnomad_release[mt.row_key].freq[
+                    hl.eval(gnomad_release.freq_index_dict[f"{pop}-adj"])
+                ]["AF"]
+                for pop in gnomad_af_pops
             }
         )
     ht = mt.annotate_rows(info=hl.struct(**callstat_dict)).rows()
@@ -172,12 +211,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--tractor-output",
-        help="Path to tractor output files without .hapcount.txt and .dosage.txt extensions, e.g. /Tractor/output/test_run",
+        help="Path to tractor output files without .hapcount.txt and .dosage.txt extensions, e.g. /Tractor/output/test_run.",
         required=True,
     )
     parser.add_argument(
         "--output-path",
-        help="Optional output path for files and file prefix, e.g. ~/test_data/test1",
+        help="Optional output path for files and file prefix, e.g. ~/test_data/test1.",
     )
     parser.add_argument(
         "--is-zipped", help="Input files are gzipped.", action="store_true"
@@ -186,6 +225,16 @@ if __name__ == "__main__":
         "--min-partitions",
         help="Minimum number of partitions to use when reading in tsv files as hail MTs, defaults to 32.",
         default=32,
+    )
+    parser.add_argument(
+        "--mt-path-for-adj",
+        help="Path to hail MatrixTable generated from pipeline input VCF. Must contain GT, GQ, DP, and AB fields. If MT path provided, script will filter to high quality GTs only.",
+    )
+
+    parser.add_argument(
+        "--add-gnomad-af",
+        help="Add gnomAD population allele frequencies from AMR, NFE, AFR, and EAS.",
+        action="store_true",
     )
     args = parser.parse_args()
     generate_joint_vcf(**vars(args))
