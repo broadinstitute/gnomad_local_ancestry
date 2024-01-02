@@ -21,6 +21,31 @@ gnomad_public_resource_configuration.source = (
     GnomadPublicResourceSource.GOOGLE_CLOUD_PUBLIC_DATASETS
 )
 
+CONTIGS = [
+    "chr1",
+    "chr2",
+    "chr3",
+    "chr4",
+    "chr5",
+    "chr6",
+    "chr7",
+    "chr8",
+    "chr9",
+    "chr10",
+    "chr11",
+    "chr12",
+    "chr13",
+    "chr14",
+    "chr15",
+    "chr16",
+    "chr17",
+    "chr18",
+    "chr19",
+    "chr20",
+    "chr21",
+    "chr22",
+]
+
 
 def get_subset_samples(
     samples_path: Optional[str] = None,
@@ -93,6 +118,7 @@ def main(args):
     min_callrate = args.min_callrate
     min_af = args.min_af
     test = args.test
+    contigs = CONTIGS if not contigs else contigs
 
     # TODO: Come back to args needed in get_gnomad_v3_vds
     logger.info("Running script on %s...", contigs)
@@ -122,7 +148,6 @@ def main(args):
     )
 
     for contig in contigs:
-        contig = f"chr{contig}"
         logger.info("Subsetting %s...", contig)
         vds = hl.vds.filter_intervals(
             vds,
@@ -182,7 +207,6 @@ if __name__ == "__main__":
         "--contigs",
         nargs="+",
         help="Integer contigs to run subsetting on",
-        required=True,
     )
     parser.add_argument(
         "--pops",
