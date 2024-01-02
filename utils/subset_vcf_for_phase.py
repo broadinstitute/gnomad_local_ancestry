@@ -1,16 +1,17 @@
 # noqa: D100
 import logging
+from typing import List, Optional
 
+import hail as hl
 from gnomad.resources.config import (
     gnomad_public_resource_configuration,
     GnomadPublicResourceSource,
 )
-from gnomad.resources.grch38.gnomad import public_release
-from gnomad.resources.resource_utils import DataException
 from gnomad.sample_qc.pipeline import filter_rows_for_qc
-from gnomad.utils.filtering import subset_samples_and_variants
-from gnomad.utils.reference_genome import get_reference_genome
-import hail as hl
+
+
+from gnomad_qc.v3.resources.basics import get_gnomad_v3_vds
+from gnomad_qc.v4.resources.meta import meta
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
@@ -21,16 +22,53 @@ gnomad_public_resource_configuration.source = (
 )
 
 
-def main(
-    mt_path: str,
-    samples_path: str,
-    output_bucket: str,
-    contigs: list,
-    dense: bool = False,
-    gt_expr: str = "LGT",
-    min_callrate: float = 0.9,
-    min_af: float = 0.001,
-) -> hl.MatrixTable:
+def get_subset_samples(
+    samples_path: Optional[str] = None,
+    pops: Optional[List[str]] = None,
+    hgdp: bool = False,
+    tgp: bool = False,
+) -> hl.Table:
+    """
+    Get samples to subset out of v3 VDS.
+
+    :param samples_path: Path to TSV of sample IDs to subset to. The TSV must have a header of 's'.
+    :param pops: Optional list of populations to include in subset. Defaults to None.
+    :param hgdp: Boolean of whether to include HGDP in subset. Defaults to False.
+    :param tgp: Boolean of whether to include TGP in subset. Defaults to False.
+    """
+    meta_ht = meta(data_type="genomes").ht()
+    samples_to_keep = []
+
+    def _add_filtered_meta(condition):
+        ht_to_add = meta_ht.filter(condition).select()
+        samples_to_keep.append(ht_to_add)
+
+    if samples_path:
+        sample_ht = hl.import_table(samples_path)
+        sample_ht = sample_ht.select()
+
+    # Select released samples with infered population
+    if pops:
+        pops_to_keep = hl.literal(pops)
+        _add_filtered_meta(
+            (pops_to_keep.contains(meta_ht.population_inference.pop))
+            & (meta_ht.release)
+        )
+
+    # Keep HGDP samples in subset
+    if hgdp:
+        _add_filtered_meta(meta_ht.subsets.hgdp)
+
+    # Keep TGP samples in subset
+    if tgp:
+        _add_filtered_meta(meta_ht.subsets.tgp)
+
+    # Create final subset sample table
+    sample_ht = hl.Table.union(*samples_to_keep)
+    return sample_ht
+
+
+def main(args):
     """
     Subset a matrix table to specified samples and across specified contigs.
 
@@ -41,58 +79,65 @@ def main(
     :param output_bucket: Path to output bucket for contig MT and VCF.
     :param contigs: List of contigs as integers.
     :param dense: Boolean of whether source MT is dense. Defaults to False.
-    :param gt_expr: Boolean of GT expression in MT. Defaults to 'LGT'.
     :param min_callrate: Minimum variant callrate for variant QC. Defaults to 0.9.
     :param min_af: Minimum allele frequency for variant QC. Defaults to 0.001.
     """
+    hl.init(
+        log="/subset_vcf_for_phase.log",
+        default_reference="GRCh38",
+        tmp_dir="gs://gnomad-tmp-4day/subset_vcf_for_phase/",
+    )
+
+    output_path = args.output_path
+    contigs = args.contigs
+    min_callrate = args.min_callrate
+    min_af = args.min_af
+    test = args.test
+
+    # TODO: Come back to args needed in get_gnomad_v3_vds
     logger.info("Running script on %s...", contigs)
-    full_mt = hl.read_matrix_table(mt_path)
+    vds = get_gnomad_v3_vds()
+
+    if test:
+        vds = hl.vds.VariantDataset(
+            vds.reference_data._filter_partitions(range(2)),
+            vds.variant_data._filter_partitions(range(2)),
+        )
+
+    sample_ht = get_subset_samples(
+        samples_path=args.samples_path, pops=args.pops, hgdp=args.hgdp, tgp=args.tgp
+    )
+
+    logger.info("Subsetting to %d samples", sample_ht.count())
+    vds = hl.vds.filter_samples(vds, sample_ht, remove_dead_alleles=True)
+
+    logger.info(
+        "Applying min_rep to the variant data MT because remove_dead_alleles may "
+        "result in variants that do not have the minimum representation."
+    )
+    vd = vds.variant_data
+    vds = hl.vds.VariantDataset(
+        vds.reference_data,
+        vd.key_rows_by(**hl.min_rep(vd.locus, vd.alleles)),
+    )
+
     for contig in contigs:
         contig = f"chr{contig}"
         logger.info("Subsetting %s...", contig)
-        mt = hl.filter_intervals(
-            full_mt,
-            [
-                hl.parse_locus_interval(
-                    contig, reference_genome=get_reference_genome(full_mt.locus)
-                )
-            ],
+        vds = hl.vds.filter_intervals(
+            vds,
+            [hl.parse_locus_interval(contig, reference_genome="GRCh38")],
         )
-        if "s" not in hl.import_table(samples_path, no_header=False).row.keys():
-            raise DataException(
-                "The TSV provided by `sample_path` must include a header with a column labeled `s` for the sample IDs to keep in the subset."
-            )
+        vds = hl.vds.split_multi(vds, filter_changed_loci=True)
+        mt = hl.vds.to_dense_mt(vds)
+        mt = mt.drop("gvcf_info")
 
-        mt = subset_samples_and_variants(
-            mt, sample_path=samples_path, sparse=not dense, gt_expr=gt_expr
-        )
-
-        if not dense:
-            mt = hl.MatrixTable(
-                hl.ir.MatrixKeyRowsBy(
-                    mt._mir, ["locus", "alleles"], is_sorted=True
-                )  # Prevents hail from running sort on genotype MT which is already sorted by a unique locus
-            )
-            mt = mt.drop("gvcf_info")
-            mt = hl.experimental.sparse_split_multi(mt, filter_changed_loci=True)
-            mt = hl.experimental.densify(mt)
-            mt = mt.filter_rows(
-                hl.len(mt.alleles) > 1
-            )  # Note: This step is sparse-specific, removing monoallelic sites after densifying
-        else:
-            mt = hl.split_multi_hts(mt)
-
-        mt = mt.filter_rows(hl.agg.any(mt.GT.is_non_ref()))
+        # TODO: See if this is needed: mt = mt.filter_rows(hl.agg.any(mt.GT.is_non_ref()))
         logger.info(
-            "Filtering to variants with greater than %d callrate and %d allele frequency",
+            "Filtering to variants with greater than %f callrate and %f allele frequency",
             min_callrate,
             min_af,
         )
-        if args.gnomad_release_only:
-            logger.info("Filtering to gnomAD v3.1 release variants")
-            mt = mt.filter_rows(
-                hl.is_defined(public_release("genomes").ht()[mt.row_key])
-            )
         mt = filter_rows_for_qc(
             mt,
             min_callrate=min_callrate,
@@ -101,15 +146,14 @@ def main(
             min_hardy_weinberg_threshold=None,
         )
         mt = mt.checkpoint(
-            f"{output_bucket}{contig}/{contig}_dense_bia_snps.mt", overwrite=True,
+            f"{output_path}/{contig}/{contig}_dense_bia_snps.mt",
+            overwrite=True,
         )
-        logger.info(
-            "Subsetted %s to %d variants and %d samples",
-            contig,
-            mt.count_rows(),
-            mt.count_cols(),
+
+        logger.info("Exporting VCF for %s...", contig)
+        hl.export_vcf(
+            mt, f"{output_path}{contig}/{contig}_dense_bia_snps.vcf.bgz", tabix=True
         )
-        hl.export_vcf(mt, f"{output_bucket}{contig}/{contig}_dense_bia_snps.vcf.bgz")
 
 
 if __name__ == "__main__":
@@ -121,17 +165,7 @@ if __name__ == "__main__":
         "--samples-path",
         help="TSV of samples, expects the TSV to have a header with the label `s`",
     )
-    parser.add_argument(
-        "--output-bucket", help="Bucket for MTs and VCFs", required=True
-    )
-    parser.add_argument(
-        "--dense", help="Whether MT is dense. Defaults to False", action="store_true"
-    )
-    parser.add_argument(
-        "--gt-expr",
-        help="Genotype expression, typically 'LGT' is for sparse MTs while 'GT' for dense.",
-        default="LGT",
-    )
+    parser.add_argument("--output-path", help="Bucket for MTs and VCFs", required=True)
     parser.add_argument(
         "--min-callrate",
         help="Minimum callrate threshiold as float for variant QC",
@@ -151,18 +185,24 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
-        "--gnomad-release-only",
-        help="Filter to only variants in the gnomad v3.1 release",
+        "--pops",
+        nargs="+",
+        help="Populations to include in subset",
+    )
+    parser.add_argument(
+        "--tgp",
+        help="Include TGP in subset",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--hgdp",
+        help="Include HGDP in subset",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--test",
+        help="Subset to 2 partitions",
         action="store_true",
     )
     args = parser.parse_args()
-    main(
-        mt_path=args.mt_path,
-        samples_path=args.samples_path,
-        output_bucket=args.output_bucket,
-        contigs=args.contigs,
-        dense=args.dense,
-        gt_expr=args.gt_expr,
-        min_callrate=args.min_callrate,
-        min_af=args.min_af,
-    )
+    main(args)
