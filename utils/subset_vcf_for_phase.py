@@ -115,6 +115,7 @@ def main(args):
     hgdp = args.hgdp
     tgp = args.tgp
     contigs = args.contigs
+    overwrite = args.overwrite
 
     logger.info("Running script on %s...", contigs)
     vds = get_gnomad_v3_vds()
@@ -136,22 +137,11 @@ def main(args):
     logger.info("Checkpointing sample table...")
     sample_file_name = f"{pop}_samples{'_with' if hgdp or tgp else ''}{'_hgdp' if hgdp else ''}{'_tgp' if tgp else ''}.ht"
     sample_ht = sample_ht.checkpoint(
-        f"{output_path}/{sample_file_name}", overwrite=args.overwrite
+        f"{output_path}/{sample_file_name}", overwrite=overwrite
     )
 
     logger.info("Subsetting to %d samples", sample_ht.count())
     vds = hl.vds.filter_samples(vds, sample_ht, remove_dead_alleles=True)
-
-    logger.info(
-        "Applying min_rep to the variant data MT because remove_dead_alleles may "
-        "result in variants that do not have the minimum representation."
-    )
-    vds = hl.vds.VariantDataset(
-        vds.reference_data,
-        vds.variant_data.key_rows_by(
-            **hl.min_rep(vds.variant_data.locus, vds.variant_data.alleles)
-        ),
-    )
 
     for contig in contigs:
         logger.info("Subsetting %s...", contig)
@@ -162,13 +152,14 @@ def main(args):
 
         logger.info("Annotating with %s AF and info fields...", pop)
         mt = mt.annotate_rows(
-            pop_AF=release[mt.row_key].freq[pop_idx].AF,
             info=hl.struct(
                 QD=release[mt.row_key].info.QD,
                 FS=release[mt.row_key].info.FS,
                 MQ=release[mt.row_key].info.MQ,
+                pop_AF=release[mt.row_key].freq[pop_idx].AF,
+                site_callrate=hl.agg.fraction(hl.is_defined(mt.GT)),
             ),
-            site_callrate=hl.agg.fraction(hl.is_defined(mt.GT)),
+            filters=release[mt.row_key].filters,
         )
 
         logger.info(
@@ -177,15 +168,15 @@ def main(args):
             min_af,
         )
         mt = mt.filter_rows(
-            (mt.site_callrate > min_callrate)
-            & (mt.pop_AF > min_af)
+            (mt.info.site_callrate > min_callrate)
+            & (mt.info.pop_AF > min_af)
             & hl.is_snp(mt.alleles[0], mt.alleles[1])
             & (bi_allelic_expr(mt))
         )
 
         mt = mt.checkpoint(
             f"{output_path}/{contig}/{contig}_dense_bia_snps.mt",
-            overwrite=True,
+            overwrite=overwrite,
         )
 
         logger.info(
