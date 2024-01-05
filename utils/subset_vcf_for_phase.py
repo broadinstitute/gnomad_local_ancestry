@@ -114,7 +114,6 @@ def main(args):
     pop = args.pop
     hgdp = args.hgdp
     tgp = args.tgp
-    contigs = args.contigs
     overwrite = args.overwrite
 
     logger.info("Running script on %s...", contigs)
@@ -153,11 +152,13 @@ def main(args):
         logger.info("Annotating with %s AF and info fields...", pop)
         mt = mt.annotate_rows(
             info=hl.struct(
-                QD=release[mt.row_key].info.QD,
-                FS=release[mt.row_key].info.FS,
-                MQ=release[mt.row_key].info.MQ,
-                pop_AF=release[mt.row_key].freq[pop_idx].AF,
-                site_callrate=hl.agg.fraction(hl.is_defined(mt.GT)),
+                **{
+                    "QD": release[mt.row_key].info.QD,
+                    "FS": release[mt.row_key].info.FS,
+                    "MQ": release[mt.row_key].info.MQ,
+                    f"{pop}_AF": release[mt.row_key].freq[pop_idx].AF,
+                    "site_callrate": hl.agg.fraction(hl.is_defined(mt.GT)),
+                }
             ),
             filters=release[mt.row_key].filters,
         )
@@ -169,7 +170,7 @@ def main(args):
         )
         mt = mt.filter_rows(
             (mt.info.site_callrate > min_callrate)
-            & (mt.info.pop_AF > min_af)
+            & (mt.info[f"{pop}_AF"] > min_af)
             & hl.is_snp(mt.alleles[0], mt.alleles[1])
             & (bi_allelic_expr(mt))
         )
