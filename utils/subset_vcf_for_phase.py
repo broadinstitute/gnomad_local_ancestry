@@ -117,16 +117,16 @@ def main(args):
     overwrite = args.overwrite
 
     logger.info("Running script on %s...", contigs)
-    vds = get_gnomad_v3_vds()
+    full_vds = get_gnomad_v3_vds()
     release = release_sites("genomes").ht()
 
     # Get genetic ancestry group index in freq array
     pop_idx = hl.eval(release.freq_index_dict[f"{pop}_adj"])
 
     if test:
-        vds = hl.vds.VariantDataset(
-            vds.reference_data._filter_partitions(range(2)),
-            vds.variant_data._filter_partitions(range(2)),
+        full_vds = hl.vds.VariantDataset(
+            full_vds.reference_data._filter_partitions(range(2)),
+            full_vds.variant_data._filter_partitions(range(2)),
         )
     logger.info("Retrieving samples to subset to...")
     sample_ht = get_subset_samples(
@@ -140,13 +140,14 @@ def main(args):
     )
 
     logger.info("Subsetting to %d samples", sample_ht.count())
-    vds = hl.vds.filter_samples(vds, sample_ht, remove_dead_alleles=True)
+    full_vds = hl.vds.filter_samples(full_vds, sample_ht, remove_dead_alleles=True)
 
     for contig in contigs:
         logger.info("Subsetting %s...", contig)
-        vds = hl.vds.filter_chromosomes(vds, keep=contig)
+        vds = hl.vds.filter_chromosomes(full_vds, keep=contig)
         vds = hl.vds.split_multi(vds, filter_changed_loci=True)
         mt = hl.vds.to_dense_mt(vds)
+        mt = mt.unfilter_entries()
         mt = mt.drop("gvcf_info")
 
         logger.info("Annotating with %s AF and info fields...", pop)
