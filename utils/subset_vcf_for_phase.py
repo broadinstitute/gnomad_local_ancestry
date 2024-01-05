@@ -174,6 +174,7 @@ def main(args):
             & hl.is_snp(mt.alleles[0], mt.alleles[1])
             & (bi_allelic_expr(mt))
         )
+        mt = mt.select_entries("GT", "GQ", "DP", "AD", "PL")
 
         mt = mt.checkpoint(
             f"{output_path}/{contig}/{contig}_dense_bia_snps.mt",
