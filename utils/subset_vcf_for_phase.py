@@ -15,30 +15,7 @@ logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-CONTIGS = [
-    "chr1",
-    "chr2",
-    "chr3",
-    "chr4",
-    "chr5",
-    "chr6",
-    "chr7",
-    "chr8",
-    "chr9",
-    "chr10",
-    "chr11",
-    "chr12",
-    "chr13",
-    "chr14",
-    "chr15",
-    "chr16",
-    "chr17",
-    "chr18",
-    "chr19",
-    "chr20",
-    "chr21",
-    "chr22",
-]
+CONTIGS = [f"chr{x}" for x in range(1, 23)]
 
 
 def get_subset_samples(
@@ -50,10 +27,12 @@ def get_subset_samples(
     """
     Get samples to subset out of v3 VDS.
 
-    :param samples_path: Path to TSV of sample IDs to subset to. The TSV must have a header of 's'.
-    :param pop: Optional str of genetic ancestry group to include in subset. Defaults to None.
-    :param hgdp: Boolean of whether to include HGDP in subset. Defaults to False.
-    :param tgp: Boolean of whether to include TGP in subset. Defaults to False.
+    :param samples_path: Path to TSV of sample IDs to subset to. The TSV must have a
+        header of 's'.
+    :param pop: Optional str of genetic ancestry group to include in subset. Default
+        is None.
+    :param hgdp: Boolean of whether to include HGDP in subset. Default is False.
+    :param tgp: Boolean of whether to include TGP in subset. Default is False.
     :return: Table of samples to subset to.
     """
     meta_ht = meta(data_type="genomes").ht()
@@ -65,23 +44,24 @@ def get_subset_samples(
 
     if samples_path:
         sample_ht = hl.import_table(samples_path)
-        sample_ht = sample_ht.select()
+        sample_ht = sample_ht.key_by("s")
+        samples_to_keep.append(sample_ht.select())
 
-    # Select released samples with infered population
+    # Select released samples with inferred population.
     if pop:
         _add_filtered_meta(
             (pop == meta_ht.population_inference.pop) & (meta_ht.release)
         )
 
-    # Keep HGDP samples in subset
+    # Keep HGDP samples in subset.
     if hgdp:
         _add_filtered_meta(meta_ht.subsets.hgdp)
 
-    # Keep TGP samples in subset
+    # Keep TGP samples in subset.
     if tgp:
         _add_filtered_meta(meta_ht.subsets.tgp)
 
-    # Create final subset sample table
+    # Create final subset sample table.
     sample_ht = hl.Table.union(*samples_to_keep)
     return sample_ht
 
@@ -90,15 +70,17 @@ def main(args):
     """
     Subset a matrix table to specified samples and across specified contigs.
 
-    Subset and filter on min_callrate of 0.9 and min_af of 0.001. Export each subsetted contig individually.
+    Subset and filter on min_callrate of 0.9 and min_af of 0.001. Export each
+    subsetted contig individually.
 
     :param mt_path: Path to MatrixTable to subset from.
-    :param samples_path: Path to TSV of sample IDs to subset to. The TSV must have a header of 's'.
+    :param samples_path: Path to TSV of sample IDs to subset to. The TSV must have a
+        header of 's'.
     :param output_bucket: Path to output bucket for contig MT and VCF.
     :param contigs: List of contigs as integers.
-    :param dense: Boolean of whether source MT is dense. Defaults to False.
-    :param min_callrate: Minimum variant callrate for variant QC. Defaults to 0.9.
-    :param min_af: Minimum allele frequency for variant QC. Defaults to 0.001.
+    :param dense: Boolean of whether source MT is dense. Default is False.
+    :param min_callrate: Minimum variant callrate for variant QC. Default is 0.9.
+    :param min_af: Minimum allele frequency for variant QC. Default is 0.001.
     """
     hl.init(
         log="/subset_vcf_for_phase.log",
@@ -134,7 +116,10 @@ def main(args):
     )
 
     logger.info("Checkpointing sample table...")
-    sample_file_name = f"{pop}_samples{'_with' if hgdp or tgp else ''}{'_hgdp' if hgdp else ''}{'_tgp' if tgp else ''}.ht"
+    sample_file_name = (
+        f"{pop}_samples{'_with' if hgdp or tgp else ''}"
+        f"{'_hgdp' if hgdp else ''}{'_tgp' if tgp else ''}.ht"
+    )
     sample_ht = sample_ht.checkpoint(
         f"{output_path}/{sample_file_name}", overwrite=overwrite
     )
@@ -178,12 +163,12 @@ def main(args):
         mt = mt.select_entries("GT", "GQ", "DP", "AD", "PL")
 
         mt = mt.checkpoint(
-            f"{output_path}/{contig}/{contig}_dense_bia_snps.mt",
+            f"{output_path}/{contig}/{contig}_dense_biallelic_snps.mt",
             overwrite=overwrite,
         )
 
         logger.info(
-            "Exporting VCF for %s... with %s variants across %s samples",
+            "Exporting VCF for %s... with %s variants across %s samples...",
             contig,
             mt.count_rows(),
             mt.count_cols(),
@@ -200,49 +185,49 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--samples-path",
-        help="TSV of samples, expects the TSV to have a header with the label `s`",
+        help="TSV of samples, expects the TSV to have a header with the label 's'",
     )
-    parser.add_argument("--output-path", help="Bucket for MTs and VCFs", required=True)
+    parser.add_argument("--output-path", help="Bucket for MTs and VCFs.", required=True)
     parser.add_argument(
         "--min-callrate",
-        help="Minimum callrate threshiold as float for variant QC",
+        help="Minimum callrate threshiold as float for variant QC.",
         type=float,
         default=0.90,
     )
     parser.add_argument(
         "--min-af",
-        help="Minimum allele frequency as float for variant QC",
+        help="Minimum allele frequency as float for variant QC.",
         type=float,
         default=0.001,
     )
     parser.add_argument(
         "--contigs",
         nargs="+",
-        help="Integer contigs to run subsetting on",
+        help="Autosomal contigs to run subsetting on. Default is all autosomal contigs.",
         default=CONTIGS,
     )
     parser.add_argument(
         "--pop",
-        help="Population to include in subset",
+        help="Population to include in subset.",
     )
     parser.add_argument(
         "--tgp",
-        help="Include TGP in subset",
+        help="Include TGP in subset.",
         action="store_true",
     )
     parser.add_argument(
         "--hgdp",
-        help="Include HGDP in subset",
+        help="Include HGDP in subset.",
         action="store_true",
     )
     parser.add_argument(
         "--test",
-        help="Subset to 2 partitions",
+        help="Subset to 2 partitions.",
         action="store_true",
     )
     parser.add_argument(
         "--overwrite",
-        help="Overwrite existing files",
+        help="Overwrite existing files.",
         action="store_true",
     )
     args = parser.parse_args()
