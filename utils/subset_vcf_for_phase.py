@@ -93,7 +93,7 @@ def main(args):
     min_callrate = args.min_callrate
     min_af = args.min_af
     test = args.test
-    af_pop = args.pop
+    af_pop = args.af_pop
     subset_pop = args.subset_pop
     hgdp = args.hgdp
     tgp = args.tgp
