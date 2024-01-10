@@ -93,7 +93,8 @@ def main(args):
     min_callrate = args.min_callrate
     min_af = args.min_af
     test = args.test
-    pop = args.pop
+    af_pop = args.pop
+    subset_pop = args.subset_pop
     hgdp = args.hgdp
     tgp = args.tgp
     overwrite = args.overwrite
@@ -103,7 +104,7 @@ def main(args):
     release = release_sites("genomes").ht()
 
     # Get genetic ancestry group index in freq array
-    pop_idx = hl.eval(release.freq_index_dict[f"{pop}_adj"])
+    pop_idx = hl.eval(release.freq_index_dict[f"{af_pop}_adj"])
 
     if test:
         full_vds = hl.vds.VariantDataset(
@@ -112,14 +113,11 @@ def main(args):
         )
     logger.info("Retrieving samples to subset to...")
     sample_ht = get_subset_samples(
-        samples_path=args.samples_path, pop=pop, hgdp=hgdp, tgp=tgp
+        samples_path=args.samples_path, pop=subset_pop, hgdp=hgdp, tgp=tgp
     )
 
     logger.info("Checkpointing sample table...")
-    sample_file_name = (
-        f"{pop}_samples{'_with' if hgdp or tgp else ''}"
-        f"{'_hgdp' if hgdp else ''}{'_tgp' if tgp else ''}.ht"
-    )
+    sample_file_name = f"{f'{subset_pop}_' if subset_pop else ''}subset_samples{'_with' if hgdp or tgp else ''}{'_hgdp' if hgdp else ''}{'_tgp' if tgp else ''}.ht"
     sample_ht = sample_ht.checkpoint(
         f"{output_path}/{sample_file_name}", overwrite=overwrite
     )
@@ -135,14 +133,14 @@ def main(args):
         mt = mt.unfilter_entries()
         mt = mt.drop("gvcf_info")
 
-        logger.info("Annotating with %s AF and info fields...", pop)
+        logger.info("Annotating with %s AF and info fields...", af_pop)
         mt = mt.annotate_rows(
             info=hl.struct(
                 **{
                     "QD": release[mt.row_key].info.QD,
                     "FS": release[mt.row_key].info.FS,
                     "MQ": release[mt.row_key].info.MQ,
-                    f"{pop}_AF": release[mt.row_key].freq[pop_idx].AF,
+                    f"{af_pop}_AF": release[mt.row_key].freq[pop_idx].AF,
                     "site_callrate": hl.agg.fraction(hl.is_defined(mt.GT)),
                 }
             ),
@@ -156,7 +154,7 @@ def main(args):
         )
         mt = mt.filter_rows(
             (mt.info.site_callrate > min_callrate)
-            & (mt.info[f"{pop}_AF"] > min_af)
+            & (mt.info[f"{af_pop}_AF"] > min_af)
             & hl.is_snp(mt.alleles[0], mt.alleles[1])
             & (bi_allelic_expr(mt))
         )
@@ -176,7 +174,7 @@ def main(args):
         # Export as a single VCF, a requirement for phasing tools
         hl.export_vcf(
             mt,
-            f"{output_path}/{contig}/{contig}_{pop}_dense_bia_snps.vcf.bgz",
+            f"{output_path}/{contig}/{contig}_{subset_pop}_dense_bia_snps.vcf.bgz",
             tabix=True,
         )
 
@@ -185,7 +183,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--samples-path",
-        help="TSV of samples, expects the TSV to have a header with the label 's'",
+        help="Optional TSV of additional samples to subset, expects the TSV to have a header with the label 's'",
     )
     parser.add_argument("--output-path", help="Bucket for MTs and VCFs.", required=True)
     parser.add_argument(
@@ -207,8 +205,13 @@ if __name__ == "__main__":
         default=CONTIGS,
     )
     parser.add_argument(
-        "--pop",
-        help="Population to include in subset.",
+        "--af-pop",
+        help="Population to use for AF cutoff for samples included in subset.",
+        required=True,
+    )
+    parser.add_argument(
+        "--subset-pop",
+        help="Optional inferred population to include in subset.",
     )
     parser.add_argument(
         "--tgp",
