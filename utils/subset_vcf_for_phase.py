@@ -39,7 +39,7 @@ def get_subset_samples(
     samples_to_keep = []
 
     def _add_filtered_meta(condition):
-        ht_to_add = meta_ht.filter(condition).select()
+        ht_to_add = meta_ht.filter(condition)
         samples_to_keep.append(ht_to_add)
 
     if samples_path:
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--contigs",
         nargs="+",
-        help="Contigs to run subsetting on. Default is all autosomal contigs.",
+        help="Autosomal contigs to run subsetting on. Default is all autosomal contigs.",
         default=CONTIGS,
     )
     parser.add_argument(
