@@ -40,7 +40,7 @@ def get_subset_samples(
 
     def _add_filtered_meta(condition):
         ht_to_add = meta_ht.filter(condition)
-        samples_to_keep.append(ht_to_add)
+        samples_to_keep.append(ht_to_add.select())
 
     if samples_path:
         sample_ht = hl.import_table(samples_path)
@@ -63,6 +63,7 @@ def get_subset_samples(
 
     # Create final subset sample table.
     sample_ht = hl.Table.union(*samples_to_keep)
+    sample_ht = sample_ht.annotate(**meta_ht[sample_ht.key])
     return sample_ht
 
 
@@ -99,10 +100,8 @@ def main(args):
     tgp = args.tgp
     overwrite = args.overwrite
 
-    logger.info("Running script on %s...", contigs)
     full_vds = get_gnomad_v3_vds()
     release = release_sites("genomes").ht()
-
     # Get genetic ancestry group index in freq array
     pop_idx = hl.eval(release.freq_index_dict[f"{af_pop}_adj"])
 
@@ -111,6 +110,10 @@ def main(args):
             full_vds.reference_data._filter_partitions(range(2)),
             full_vds.variant_data._filter_partitions(range(2)),
         )
+        contigs = [contigs[0]]
+
+    logger.info("Running script on %s...", contigs)
+
     logger.info("Retrieving samples to subset to...")
     sample_ht = get_subset_samples(
         samples_path=args.samples_path, pop=subset_pop, hgdp=hgdp, tgp=tgp
