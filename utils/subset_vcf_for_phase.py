@@ -228,7 +228,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--test",
-        help="Subset to 2 partitions.",
+        help="Subset to 2 partitions and variants on chr1.",
         action="store_true",
     )
     parser.add_argument(
