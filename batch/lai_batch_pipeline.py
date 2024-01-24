@@ -3,10 +3,9 @@ import argparse
 import logging
 from typing import Any
 
-from gnomad.utils.slack import slack_notifications
 import hailtop.batch as hb
 
-from batch.batch_utils import init_arg_parser, run_batch
+from tgg.batch.batch_utils import init_arg_parser, run_batch
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s", level=logging.INFO
@@ -504,11 +503,6 @@ if __name__ == "__main__":
         help="Google bucket path with final / included. Each steps' result will be written to within a chromosome subfolder here.",
     )
     multi_args.add_argument(
-        "--slack-channel",
-        required=False,
-        help="Slack channel to send job status to, needs @ for DM.",
-    )
-    multi_args.add_argument(
         "--phased-sample-vcf",
         required=False,
         help="Zipped VCF of phased samples, needed for LAI and/or Tractor runs.",
@@ -665,10 +659,4 @@ if __name__ == "__main__":
     args = p.parse_args()
     check_args(p, args)
 
-    if args.slack_channel:
-        from slack_creds import slack_token
-
-        with slack_notifications(slack_token, args.slack_channel):
-            main(args)
-    else:
-        main(args)
+    main(args)
