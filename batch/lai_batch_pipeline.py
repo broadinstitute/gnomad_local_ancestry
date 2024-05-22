@@ -2,7 +2,9 @@
 import argparse
 import logging
 from typing import Any
+import subprocess
 
+import hail as hl
 import hailtop.batch as hb
 
 from tgg.batch.batch_utils import init_arg_parser, run_batch
@@ -71,6 +73,101 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
             parser.error(
                 "Need to specify either number of continental ancestries within RFMix and phased sample VCF."
             )
+
+
+def split_vcf(
+    meta_table_path: str, sample_list_path: str, vcf_path: str, output_prefix: str
+) -> hb.job.Job:
+    """
+    Subset a VCF based on a provided sample list and process it using Hail Batch.
+
+    :param meta_table_path: Path to the meta table.
+    :param sample_list_path: Path to the sample list.
+    :param vcf_path: Path to the input VCF file.
+    :param output_prefix: Prefix for the output files.
+    :return: Hail Batch job object.
+    """
+    # Step 1: Update package lists and install vcftools
+    subprocess.run(["sudo", "apt", "update"], check=True)
+    subprocess.run(["sudo", "apt", "install", "vcftools", "-y"], check=True)
+
+    # Step 2: Load the meta table
+    meta = hl.read_table(meta_table_path)
+
+    # Define lists to store sample IDs for cohort and reference panels
+    cohort_samples = []
+    reference_samples = []
+
+    # Load the sample list
+    with hl.hadoop_open(sample_list_path, "r") as f:
+        sample_list = [line.strip() for line in f]
+
+    # Iterate over each row in the meta table
+    for row in meta.collect():
+        # Check if the sample ID is in the sample list
+        if row.s in sample_list:
+            # Access the subsets and project_meta fields
+            subsets = row.subsets
+            project_meta = row.project_meta
+
+            # Determine if the sample belongs to the cohort or reference group
+            if (subsets.hgdp or subsets.tgp) and (
+                project_meta.project_subpop == "ASW"
+                or project_meta.project_subpop == "ACB"
+            ):
+                cohort_samples.append(row.s)
+            elif (subsets.hgdp or subsets.tgp) and (
+                project_meta.project_subpop != "ASW"
+                or project_meta.project_subpop != "ACB"
+            ):
+                reference_samples.append(row.s)
+            elif not (subsets.hgdp or subsets.tgp):
+                cohort_samples.append(row.s)
+
+    # Step 3: Subset VCF for cohort samples
+    cohort_sample_names_file = f"{output_prefix}_cohort_sample_names.txt"
+    with open(cohort_sample_names_file, "w") as f:
+        f.write("\n".join(cohort_samples))
+
+    vcf_subset_cohort_command = f"vcftools --gzvcf {vcf_path} --keep {cohort_sample_names_file} --recode --out {output_prefix}_subset_cohort"
+    subprocess.run(vcf_subset_cohort_command, shell=True)
+
+    # Subset VCF for reference samples
+    reference_sample_names_file = f"{output_prefix}_reference_sample_names.txt"
+    with open(reference_sample_names_file, "w") as f:
+        f.write("\n".join(reference_samples))
+
+    vcf_subset_reference_command = f"vcftools --gzvcf {vcf_path} --keep {reference_sample_names_file} --recode --out {output_prefix}_subset_reference"
+    subprocess.run(vcf_subset_reference_command, shell=True)
+
+    # Step 4: Initialize a Hail Batch instance
+    batch = hb.Batch(name="Split VCF")
+
+    # Step 5: Define the parameters for the split_vcf function
+    # assuming contig is not needed for split_vcf function?
+
+    # Step 6: Call the split_vcf function with the specified parameters
+    split_vcf_job = batch.new_job(name="Run split_vcf")
+    split_vcf_job.image(
+        "gcr.io/broad-mpg-gnomad/lai_phasing:latest"
+    )  # Set Docker image - I just put this as a placeholder
+    split_vcf_job.memory("highmem")  # Set memory requirement
+    split_vcf_job.storage("100G")  # Set storage requirement
+    split_vcf_job.cpu(8)  # Set CPU requirement
+
+    # Command to execute the split_vcf function
+    split_vcf_command = f"""
+    python -c "
+    from __main__ import split_vcf
+    split_vcf('{meta_table_path}', '{sample_list_path}', '{vcf_path}', '{output_prefix}')
+    "
+    """
+    split_vcf_job.command(split_vcf_command)
+
+    # Step 7: Submit the batch job
+    split_vcf_job.run()
+
+    return split_vcf_job
 
 
 def eagle(
@@ -520,13 +617,19 @@ if __name__ == "__main__":
         help="Whether to run eagle to phase samples.",
     )
     phasing_args.add_argument(
-        "--eagle-mem", default="highmem", help="Memory for eagle batch job.",
+        "--eagle-mem",
+        default="highmem",
+        help="Memory for eagle batch job.",
     )
     phasing_args.add_argument(
-        "--eagle-storage", default="100G", help="Storage for eagle batch job.",
+        "--eagle-storage",
+        default="100G",
+        help="Storage for eagle batch job.",
     )
     phasing_args.add_argument(
-        "--eagle-cpu", default=16, help="CPU for eagle batch job.",
+        "--eagle-cpu",
+        default=16,
+        help="CPU for eagle batch job.",
     )
     phasing_args.add_argument(
         "--sample-vcf",
@@ -548,13 +651,19 @@ if __name__ == "__main__":
         "Arguments for running local ancestry inference tools (rfmix, xgmix) on samples",
     )
     lai_args.add_argument(
-        "--lai-mem", default="highmem", help="Memory for LAI tool batch job.",
+        "--lai-mem",
+        default="highmem",
+        help="Memory for LAI tool batch job.",
     )
     lai_args.add_argument(
-        "--lai-storage", default="100G", help="Storage for LAI tool batch job.",
+        "--lai-storage",
+        default="100G",
+        help="Storage for LAI tool batch job.",
     )
     lai_args.add_argument(
-        "--lai-cpu", default=16, help="CPU for LAI tool batch job.",
+        "--lai-cpu",
+        default=16,
+        help="CPU for LAI tool batch job.",
     )
     lai_args.add_argument(
         "--phased-ref-vcf",
@@ -601,13 +710,19 @@ if __name__ == "__main__":
         help="Run Tractor's ExtractTracts.py script.",
     )
     tractor_args.add_argument(
-        "--tractor-mem", default="highmem", help="Memory for Tractor batch job.",
+        "--tractor-mem",
+        default="highmem",
+        help="Memory for Tractor batch job.",
     )
     tractor_args.add_argument(
-        "--tractor-storage", default="200G", help="Storage for Tractor batch job.",
+        "--tractor-storage",
+        default="200G",
+        help="Storage for Tractor batch job.",
     )
     tractor_args.add_argument(
-        "--tractor-cpu", default=16, help="CPU for Tractor batch job.",
+        "--tractor-cpu",
+        default=16,
+        help="CPU for Tractor batch job.",
     )
     tractor_args.add_argument(
         "--tractor-image",
@@ -643,13 +758,19 @@ if __name__ == "__main__":
         action="store_true",
     )
     vcf_args.add_argument(
-        "--vcf-mem", default="highmem", help="Memory for VCF generation batch job.",
+        "--vcf-mem",
+        default="highmem",
+        help="Memory for VCF generation batch job.",
     )
     vcf_args.add_argument(
-        "--vcf-storage", default="200G", help="Storage for VCF generation batch job.",
+        "--vcf-storage",
+        default="200G",
+        help="Storage for VCF generation batch job.",
     )
     vcf_args.add_argument(
-        "--vcf-cpu", default=16, help="CPU for VCF generation batch job.",
+        "--vcf-cpu",
+        default=16,
+        help="CPU for VCF generation batch job.",
     )
     vcf_args.add_argument(
         "--vcf-image",
