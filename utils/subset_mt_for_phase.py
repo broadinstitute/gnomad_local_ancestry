@@ -1,51 +1,95 @@
 """Module to subset MT for phasing."""
 
+import logging
 import hail as hl
 
+logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-def subset_mt(mt_path: str, meta_path: str, populations: list, output_file_path: str):
+MT_PATH = "gs://gnomad-lai/afr/sample_subsets/{contig}/{contig}_dense_biallelic_snps.mt"
+META_PATH = "gs://gnomad-lai/afr/sample_subsets/afr_subset_samples_with_hgdp_tgp.ht"
+
+
+def subset_mt(mt_path: str, populations: list, output_path: str):
     """
     Subset a MatrixTable based on specified populations and create a sample map.
 
     :param mt_path: Path to the input MatrixTable.
-    :param meta_path: Path to the meta table.
     :param populations: List of populations to subset (e.g., ["afr", "nfe"]).
     :param output_file_path: Path for the output sample map file.
     :return: Filtered MatrixTable.
     """
-    # Read MatrixTable and meta table
+    logger.info("Reading in MT and meta for subsetting...")
     mt = hl.read_matrix_table(mt_path)
-    meta = hl.read_table(meta_path)
+    meta = hl.read_table(META_PATH)
 
-    # Annotate MatrixTable with meta information
-    mt = mt.annotate_cols(**meta[mt.s])
-
-    # Filter MatrixTable based on specified populations
-    filtered_mt = mt.filter_cols(
-        hl.if_else(
-            hl.agg.any(mt.subsets.hgdp) | hl.agg.any(mt.subsets.tgp),
-            hl.literal(populations).contains(mt.project_meta.project_pop),
-            False,
-        )
+    logger.info("Annotating MatrixTable with meta information...")
+    mt = mt.annotate_cols(
+        hgdp=meta[mt.s].subsets.hgdp,
+        tgp=meta[mt.s].subsets.tgp,
+        project_pop=meta[mt.s].project_pop,
+        project_subpop=meta[mt.s].project_subpop,
     )
 
-    # Collect sample IDs
-    ref_ids = list(filtered_mt.s.collect())
-    individual_ids = list(mt.s.collect())
+    logger.info("Removing HGDP/TGP samples from unspecified populations...")
+    filtered_mt = mt.filter_cols(
+        (mt.subsets.hgdp | mt.subsets.tgp)
+        & ~hl.literal(populations).contains(mt.project_pop),
+        keep=False,
+    )
 
-    # Combine ref_ids and individual_ids
-    all_ids = set(ref_ids + individual_ids)
-
-    # Write the sample map
-    with hl.hadoop_open(output_file_path, "w") as f:
-        # Write the header row with an 's'
-        f.write("s\n")
-
-        # Write each sample ID to the file
-        for sample_id in all_ids:
-            f.write(f"{sample_id}\n")
-
+    all_ids = filtered_mt.cols()
+    hl.write_table(all_ids, output_path + "/sample_map.tsv")
     return filtered_mt
+
+
+def main():
+    """Subset a matrix table to specified samples and across specified contigs."""
+    contig = args.contig
+    output_path = args.output_path
+
+    if args.mt_path is not None:
+        mt_path = args.mt_path
+    elif args.mt_path is None and contig is not None:
+        mt_path = MT_PATH.format(contig=contig)
+    else:
+        raise ValueError("Must provide either mt_path or contig.")
+
+    mt = subset_mt(mt_path, args.populations, output_path)
+    hl.export_vcf(
+        mt,
+        f"{output_path}/{contig}/{contig}_{args.subset_pop}.vcf.bgz",
+        tabix=True,
+    )
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mt-path", help="Path to the input MatrixTable.")
+    parser.add_argument("--contig", help="Contig to subset.")
+    parser.add_argument("--output-path", help="Path to the output bucket.")
+    parser.add_argument(
+        "--populations",
+        nargs="+",
+        help="List of populations to subset (e.g., ['afr', 'nfe']).",
+        default=["afr", "nfe"],
+    )
+    parser.add_argument("--subset-pop", help="Population to subset.", default="afr")
+    parser.add_argument(
+        "--test",
+        help="Subset to 2 partitions and variants on chr1.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--overwrite",
+        help="Overwrite existing files.",
+        action="store_true",
+    )
+    args = parser.parse_args()
+    main(args)
 
 
 # testcase:
