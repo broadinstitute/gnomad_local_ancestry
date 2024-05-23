@@ -11,40 +11,42 @@ MT_PATH = "gs://gnomad-lai/afr/sample_subsets/{contig}/{contig}_dense_biallelic_
 META_PATH = "gs://gnomad-lai/afr/sample_subsets/afr_subset_samples_with_hgdp_tgp.ht"
 
 
-def subset_mt(mt_path: str, populations: list, output_path: str):
+def subset_mt(mt: hl.MatrixTable, populations: list, output_path: str):
     """
     Subset a MatrixTable based on specified populations and create a sample map.
 
-    :param mt_path: Path to the input MatrixTable.
+    :param mt: Input MatrixTable.
     :param populations: List of populations to subset (e.g., ["afr", "nfe"]).
     :param output_file_path: Path for the output sample map file.
     :return: Filtered MatrixTable.
     """
-    logger.info("Reading in MT and meta for subsetting...")
-    mt = hl.read_matrix_table(mt_path)
+    logger.info("Reading in meta for subsetting...")
     meta = hl.read_table(META_PATH)
 
     logger.info("Annotating MatrixTable with meta information...")
     mt = mt.annotate_cols(
         hgdp=meta[mt.s].subsets.hgdp,
         tgp=meta[mt.s].subsets.tgp,
-        project_pop=meta[mt.s].project_pop,
-        project_subpop=meta[mt.s].project_subpop,
+        project_pop=meta[mt.s].project_meta.project_pop,
+        project_subpop=meta[mt.s].project_meta.project_subpop,
     )
-
+    logger.info(f"{mt.count_cols()} samples in MatrixTable.")
     logger.info("Removing HGDP/TGP samples from unspecified populations...")
     filtered_mt = mt.filter_cols(
-        (mt.subsets.hgdp | mt.subsets.tgp)
-        & ~hl.literal(populations).contains(mt.project_pop),
+        (mt.hgdp | mt.tgp) & ~hl.literal(populations).contains(mt.project_pop),
         keep=False,
     )
-
+    filtered_mt = filtered_mt.filter_rows(hl.agg.any(filtered_mt.GT.is_non_ref()))
+    logger.info(f"{filtered_mt.count_cols()} samples in filtered MatrixTable.")
+    logger.info("Exporting sample map...")
+    output_path = f"{output_path}/sample_map.tsv"
     all_ids = filtered_mt.cols()
-    hl.write_table(all_ids, output_path + "/sample_map.tsv")
+    all_ids.export(output_path)
+
     return filtered_mt
 
 
-def main():
+def main(args):
     """Subset a matrix table to specified samples and across specified contigs."""
     contig = args.contig
     output_path = args.output_path
@@ -55,13 +57,21 @@ def main():
         mt_path = MT_PATH.format(contig=contig)
     else:
         raise ValueError("Must provide either mt_path or contig.")
+    mt = hl.read_matrix_table(mt_path)
 
-    mt = subset_mt(mt_path, args.populations, output_path)
-    hl.export_vcf(
-        mt,
-        f"{output_path}/{contig}/{contig}_{args.subset_pop}.vcf.bgz",
-        tabix=True,
+    if args.test:
+        logger.info("Filtering to test partitions...")
+        mt = mt._filter_partitions(list(range(hl.eval(hl.min(mt.n_partitions(), 2)))))
+
+    mt = subset_mt(mt, args.populations, output_path)
+
+    output_path = (
+        f"{output_path}/{contig}/{contig}_{args.subset_pop}.vcf.bgz"
+        if contig
+        else f"{output_path}/{args.subset_pop}.vcf.bgz"
     )
+
+    hl.export_vcf(mt, output_path, tabix=True)
 
 
 if __name__ == "__main__":
