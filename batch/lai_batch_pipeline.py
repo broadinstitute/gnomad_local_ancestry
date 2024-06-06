@@ -104,10 +104,19 @@ def split_vcf(
     split.memory(mem)  # Set memory requirement
     split.storage(storage)  # Set storage requirement
     split.cpu(cpu)  # Set CPU requirement
-    split.declare_resource_group(ofile=({"vcf.gz": "{root}.vcf.gz"}))
+    split.declare_resource_group(
+        ofile={"vcf.bgz": "{root}.vcf.bgz"}
+    )  # using recode on this works if we arent piping to bgzip
 
+    # Pipe to bgzip and index the VCF by vcftools
     # Command to execute the split_vcf function
-    cmd = f"""vcftools --gzvcf {phased_vcf} --keep {meta_table} --recode --out {split.ofile}"""
+    cmd = f"""vcftools --gzvcf {phased_vcf} \
+        --keep {meta_table} \
+        --recode \
+        --stdout | bgzip -c > {split.ofile['vcf.bgz']}
+
+        tabix -p vcf {split.ofile['vcf.bgz']}
+        """
     split.command(cmd)
 
     return split
@@ -424,14 +433,16 @@ def main(args):
             )
             b.write_output(
                 split_cohort_vcf.ofile,
-                dest=f"{output_path}chr{contig}/split_phased_vcf/chr{contig}/cohort",
+                dest=f"{output_path}chr{contig}/split_phased_vcf/cohort",
             )
 
-            # split_ref_vcf = split_vcf(b, phased_vcf, ref_meta_table, contig=contig, sample_type="reference")
-            # b.write_output(
-            #     split_ref_vcf.ofile,
-            #     dest=f"{output_path}chr{contig}split_phased_vcf/chr{contig}/reference",
-            # )
+            split_ref_vcf = split_vcf(
+                b, phased_vcf, ref_meta_table, contig=contig, sample_type="reference"
+            )
+            b.write_output(
+                split_ref_vcf.ofile,
+                dest=f"{output_path}chr{contig}/split_phased_vcf/reference",
+            )
 
         if args.run_rfmix or args.run_xgmix:
             sample_map = b.read_input(args.pop_sample_map)
