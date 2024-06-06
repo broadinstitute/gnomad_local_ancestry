@@ -565,8 +565,10 @@ def main(args):
 if __name__ == "__main__":
     p = init_arg_parser(
         default_cpu=16,
-        default_billing_project="kore-trial",
-        default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
+        default_billing_project="gnomad-production",
+        default_temp_bucket="gnomad-batch",
+        #default_billing_project="kore-trial",
+        #default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
     )
     multi_args = p.add_argument_group(
         "Multi-step use", "Arguments used by multiple steps"
