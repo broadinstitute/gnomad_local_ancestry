@@ -36,19 +36,33 @@ def subset_mt(mt: hl.MatrixTable, populations: list, output_path: str):
         (mt.hgdp | mt.tgp) & ~hl.literal(populations).contains(mt.project_pop),
         keep=False,
     )
+
+    filtered_mt = filtered_mt.annotate_cols(
+        sample_type=hl.if_else(
+            (filtered_mt.hgdp | filtered_mt.tgp)
+            & (
+                (filtered_mt.project_subpop != "ASW")
+                | (filtered_mt.project_subpop != "ACB")
+            ),
+            "reference",
+            "cohort",
+        )
+    )
     filtered_mt = filtered_mt.filter_rows(hl.agg.any(filtered_mt.GT.is_non_ref()))
     logger.info(f"{filtered_mt.count_cols()} samples in filtered MatrixTable.")
-    logger.info("Exporting sample map...")
-    output_path = f"{output_path}/sample_map.tsv"
-    all_ids = filtered_mt.cols()
-    all_ids.export(output_path)
+    logger.info("Exporting sample maps...")
+    for sample_type in ["reference", "cohort"]:
+        sample_map = filtered_mt.filter_cols(filtered_mt.sample_type == sample_type)
+        sample_map = sample_map.cols()
+        sample_map_path = f"{output_path}/{sample_type}_map.tsv"
+        sample_map.export(sample_map_path)
 
     return filtered_mt
 
 
 def main(args):
     """Subset a matrix table to specified samples and across specified contigs."""
-    contig = args.contig
+    contig = "chr" + args.contig if args.contig else None
     output_path = args.output_path
 
     if args.mt_path is not None:
@@ -57,21 +71,30 @@ def main(args):
         mt_path = MT_PATH.format(contig=contig)
     else:
         raise ValueError("Must provide either mt_path or contig.")
+
+    logger.info("Subsetting %s MatrixTable...", contig if contig else "passed")
     mt = hl.read_matrix_table(mt_path)
 
     if args.test:
         logger.info("Filtering to test partitions...")
         mt = mt._filter_partitions(list(range(hl.eval(hl.min(mt.n_partitions(), 2)))))
+        output_path = output_path.replace("gnomad-lai", "gnomad-tmp-4day")
 
     mt = subset_mt(mt, args.populations, output_path)
 
-    output_path = (
-        f"{output_path}/{contig}/{contig}_{args.subset_pop}.vcf.bgz"
-        if contig
-        else f"{output_path}/{args.subset_pop}.vcf.bgz"
+    output_path = f"{output_path}/{contig}" if contig else f"{output_path}"
+
+    logger.info("Exporting MatrixTable and VCF...")
+    mt = mt.checkpoint(
+        f"{output_path}/{contig+'_' if contig else ''}{args.subset_pop}.mt",
+        overwrite=args.overwrite,
     )
 
-    hl.export_vcf(mt, output_path, tabix=True)
+    hl.export_vcf(
+        mt,
+        f"{output_path}/{contig+'_' if contig else ''}{args.subset_pop}.vcf.bgz",
+        tabix=True,
+    )
 
 
 if __name__ == "__main__":
@@ -80,7 +103,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mt-path", help="Path to the input MatrixTable.")
     parser.add_argument("--contig", help="Contig to subset.")
-    parser.add_argument("--output-path", help="Path to the output bucket.")
+    parser.add_argument(
+        "--output-path",
+        help="Path to the output bucket.",
+        default="gs://gnomad-lai/afr/sample_subsets",
+    )
     parser.add_argument(
         "--populations",
         nargs="+",
@@ -100,17 +127,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(args)
-
-
-# testcase:
-# mt_path = "gs://gnomad-lai/afr/sample_subsets/chr22/chr22_dense_biallelic_snps.mt"
-# meta_path = "gs://gnomad-lai/afr/sample_subsets/afr_subset_samples_with_hgdp_tgp.ht"
-# populations = ["afr", "nfe"]
-# output_file_path = 'gs://kore-sandbox-storage/full_list.txt'
-# filtered_mt = subsetPops(mt_path, meta_path, populations, output_file_path)
-
-
-# complete the following steps
-# 1) run subset_samples_and_variants function in gnomad_methods
-# 2) export as vcf
-# 3) run joint phasing with eagle
