@@ -3,7 +3,6 @@ import argparse
 import logging
 from typing import Any
 
-import hail as hl
 import hailtop.batch as hb
 
 from tgg.batch.batch_utils import init_arg_parser, run_batch
