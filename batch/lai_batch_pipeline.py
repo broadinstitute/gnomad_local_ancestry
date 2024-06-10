@@ -104,7 +104,9 @@ def split_vcf(
     split.storage(storage)  # Set storage requirement
     split.cpu(cpu)  # Set CPU requirement
     split.declare_resource_group(
-        ofile={"vcf.bgz": "{root}.vcf.bgz"}
+        ofile={"vcf.bgz": "{root}.vcf.bgz",
+               "vcf.bgz.tbi": "{root}.vcf.bgz.tbi"
+        }
     )  # using recode on this works if we arent piping to bgzip
 
     # Pipe to bgzip and index the VCF by vcftools
@@ -564,6 +566,8 @@ if __name__ == "__main__":
         default_cpu=16,
         default_billing_project="gnomad-production",
         default_temp_bucket="gnomad-batch",
+        #default_billing_project="kore-trial",
+        #default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
     )
     multi_args = p.add_argument_group(
         "Multi-step use", "Arguments used by multiple steps"
