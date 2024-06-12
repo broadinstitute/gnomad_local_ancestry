@@ -61,7 +61,8 @@ def get_subset_samples(populations: list, output_path: str) -> hl.Table:
     meta = meta.annotate(
         sample_type=hl.if_else(
             (meta.hgdp | meta.tgp)
-            & ((meta.project_subpop != "ASW") | (meta.project_subpop != "ACB")),
+            & (meta.project_subpop != "ASW")
+            & (meta.project_subpop != "ACB"),
             "reference",
             "cohort",
         )
@@ -80,6 +81,10 @@ def get_subset_samples(populations: list, output_path: str) -> hl.Table:
 
 def main(args):
     """Subset a matrix table to specified samples and across specified contigs."""
+    hl.init(
+        default_reference="GRCh38",
+        tmp_dir="gs://gnomad-tmp-4day",
+    )
     contigs = args.contigs
     contigs = [x for x in range(1, 23)] if args.contigs == ["all"] else contigs
 
