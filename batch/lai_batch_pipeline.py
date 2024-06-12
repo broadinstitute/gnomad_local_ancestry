@@ -80,6 +80,7 @@ def split_vcf(
     meta_table: str,
     contig: str,
     sample_type: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
@@ -92,6 +93,7 @@ def split_vcf(
     :param phased_vcf: Path to the input VCF file.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param sample_type: Type of samples to subset to, i.e. cohort or reference.
+    :param region: Region to run the job in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -99,14 +101,13 @@ def split_vcf(
     :return: Batch job.
     """
     split = batch.new_job(name="Run split_vcf")
-    split.image(image)  # Set Docker image - I just put this as a placeholder
-    split.memory(mem)  # Set memory requirement
-    split.storage(storage)  # Set storage requirement
-    split.cpu(cpu)  # Set CPU requirement
+    split.regions([region])
+    split.image(image)
+    split.memory(mem)
+    split.storage(storage)
+    split.cpu(cpu)
     split.declare_resource_group(
-        ofile={"vcf.bgz": "{root}.vcf.bgz",
-               "vcf.bgz.tbi": "{root}.vcf.bgz.tbi"
-        }
+        ofile={"vcf.bgz": "{root}.vcf.bgz", "vcf.bgz.tbi": "{root}.vcf.bgz.tbi"}
     )  # using recode on this works if we arent piping to bgzip
 
     # Pipe to bgzip and index the VCF by vcftools
@@ -127,6 +128,7 @@ def eagle(
     batch: hb.Batch,
     vcf: str,
     contig: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
@@ -138,6 +140,7 @@ def eagle(
     :param batch: Hail batch object.
     :param vcf: VCF to phase.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param region: Region to run Eagle in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -145,6 +148,7 @@ def eagle(
     :return: Batch job.
     """
     e = batch.new_job(name=f"Eagle - chr{contig}")
+    e.regions([region])
     e.memory(mem)
     e.storage(storage)
     e.cpu(cpu)
@@ -171,6 +175,7 @@ def rfmix(
     contig: str,
     sample_map: str,
     rf_genetic_map: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
@@ -185,6 +190,7 @@ def rfmix(
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
     :param rf_genetic_map: HapMap genetic map from SNP base pair positions to genetic coordinates in centimorgans.
+    :param region: Region to run RFMix in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -192,6 +198,7 @@ def rfmix(
     :return: Hail batch job.
     """
     r = batch.new_job(name=f"RFMix - chr{contig}")
+    r.regions([region])
     r.memory(mem)
     r.storage(storage)
     r.cpu(cpu)
@@ -224,6 +231,7 @@ def xgmix(
     contig: str,
     ref_pvcf: str,
     sample_map: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
@@ -238,6 +246,7 @@ def xgmix(
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or SHAPEIT.
     :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
+    :param region: Region to run XGMix in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: Number of CPUs requested, defaults to 16.
@@ -245,6 +254,7 @@ def xgmix(
     :return: Hail batch job.
     """
     x = batch.new_job(name=f"XGMix - chr{contig}")
+    x.regions([region])
     x.memory(mem)
     x.storage(storage)
     x.cpu(cpu)
@@ -271,6 +281,7 @@ def tractor(
     input_zipped: bool,
     zip_output: bool,
     contig: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "200G",
     cpu: int = 16,
@@ -286,6 +297,7 @@ def tractor(
     :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param zip_output: Whether to zip the tool's output files.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param region: Region to run Tractor in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -293,6 +305,7 @@ def tractor(
     :return: Hail Batch job.
     """
     t = batch.new_job(name=f"Tractor - chr{contig}")
+    t.regions([region])
     t.memory(mem)
     t.storage(storage)
     t.cpu(cpu)
@@ -328,6 +341,7 @@ def generate_lai_vcf(
     contig: str,
     mt_path_for_adj: str,
     add_gnomad_af: bool,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "200G",
     cpu: int = 16,
@@ -343,6 +357,7 @@ def generate_lai_vcf(
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
     :param add_gnomad_af: Whether to add gnomAD's population AFs for AMR, NFE, AFR, and EAS.
+    :param region: Region to run Tractor in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -350,6 +365,7 @@ def generate_lai_vcf(
     :return: Hail Batch job.
     """
     v = batch.new_job(name=f"Generate final VCF - chr{contig}")
+    v.regions([region])
     v.memory(mem)
     v.storage(storage)
     v.cpu(cpu)
@@ -377,6 +393,7 @@ def main(args):
         - Run Tractor to extract ancestral components from the phased cohort VCF and generate a VCF, dosage counts, and haplotype counts per ancestry.
         - Generate a single VCF with ancestry-specific call statistics (AC, AN, AF).
     """
+    region = args.region
     contig = args.contig
     contig = contig[3:] if contig.startswith("chr") else contig
     logger.info("Running gnomAD LAI on chr%s", contig)
@@ -391,6 +408,7 @@ def main(args):
                     b,
                     vcf,
                     contig,
+                    region=region,
                     mem=args.eagle_mem,
                     storage=args.eagle_storage,
                     cpu=args.eagle_cpu,
@@ -407,6 +425,7 @@ def main(args):
                     b,
                     ref_vcf,
                     contig,
+                    region=region,
                     mem=args.eagle_mem,
                     storage=args.eagle_storage,
                     cpu=args.eagle_cpu,
@@ -430,7 +449,12 @@ def main(args):
             )
 
             split_cohort_vcf = split_vcf(
-                b, phased_vcf, cohort_meta_table, contig=contig, sample_type="cohort"
+                b,
+                phased_vcf,
+                cohort_meta_table,
+                region=region,
+                contig=contig,
+                sample_type="cohort",
             )
             b.write_output(
                 split_cohort_vcf.ofile,
@@ -438,7 +462,12 @@ def main(args):
             )
 
             split_ref_vcf = split_vcf(
-                b, phased_vcf, ref_meta_table, contig=contig, sample_type="reference"
+                b,
+                phased_vcf,
+                ref_meta_table,
+                region=region,
+                contig=contig,
+                sample_type="reference",
             )
             b.write_output(
                 split_ref_vcf.ofile,
@@ -468,6 +497,7 @@ def main(args):
                     contig,
                     sample_map,
                     genetic_map,
+                    region=region,
                     mem=args.lai_mem,
                     storage=args.lai_storage,
                     cpu=args.lai_cpu,
@@ -485,6 +515,7 @@ def main(args):
                     contig,
                     phased_ref_vcf,
                     sample_map,
+                    region=region,
                     mem=args.lai_mem,
                     storage=args.lai_storage,
                     cpu=args.lai_cpu,
@@ -515,6 +546,7 @@ def main(args):
                 input_zipped=True,
                 zip_output=args.zip_tractor_output,
                 contig=contig,
+                region=region,
                 mem=args.tractor_mem,
                 storage=args.tractor_storage,
                 cpu=args.tractor_cpu,
@@ -566,8 +598,8 @@ if __name__ == "__main__":
         default_cpu=16,
         default_billing_project="gnomad-production",
         default_temp_bucket="gnomad-batch",
-        #default_billing_project="kore-trial",
-        #default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
+        # default_billing_project="kore-trial",
+        # default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
     )
     multi_args = p.add_argument_group(
         "Multi-step use", "Arguments used by multiple steps"
@@ -591,6 +623,11 @@ if __name__ == "__main__":
         "--msp-file",
         required=False,
         help="Output from LAI program like RFMix_v2. Needed for Tractor and/or VCF generation.",
+    )
+    multi_args.add_argument(
+        "--batch-region",
+        help="Region to run batch in, defaults to 'us-central1'.",
+        default="us-central1",
     )
     phasing_args = p.add_argument_group("Phasing", "Arguments for phasing samples")
     phasing_args.add_argument(
