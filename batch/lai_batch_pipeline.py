@@ -345,7 +345,7 @@ def generate_lai_vcf(
     mem: str = "highmem",
     storage: str = "200G",
     cpu: int = 16,
-    image: str = "gcr.io/broad-mpg-gnomad/lai_vcf:latest",
+    image: str = "us-central1-docker.pkg.dev/broad-mpg-gnomad/images/lai_vcf:latest",
 ) -> hb.Batch.new_job:
     """
     Run generate_output_vcf.py script.
@@ -814,7 +814,7 @@ if __name__ == "__main__":
     vcf_args.add_argument(
         "--vcf-image",
         help="Docker image for VCF generation.",
-        default="gcr.io/broad-mpg-gnomad/lai_vcf:latest",
+        default="us-central1-docker.pkg.dev/broad-mpg-gnomad/images/lai_vcf:latest",
     )
     args = p.parse_args()
     check_args(p, args)
