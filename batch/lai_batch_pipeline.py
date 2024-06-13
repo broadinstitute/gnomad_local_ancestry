@@ -50,8 +50,8 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
                 "Need to specify either cohort vcf for eagle to run or pass a phased cohort vcf for RFMix to run (--run-eagle and --cohort-vcf or --phased-cohort-vcf)."
             )
         if not (
-            (args.run_eagle and args.ref_vcf)
-            or (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            or (args.run_eagle and (args.ref_vcf or args.split_phased_vcf))
             or args.phased_ref_vcf
         ):
             parser.error(
@@ -403,7 +403,7 @@ def main(args):
         - Run Tractor to extract ancestral components from the phased cohort VCF and generate a VCF, dosage counts, and haplotype counts per ancestry.
         - Generate a single VCF with ancestry-specific call statistics (AC, AN, AF).
     """
-    region = args.region
+    region = args.batch_region
     contig = args.contig
     contig = contig[3:] if contig.startswith("chr") else contig
     logger.info("Running gnomAD LAI on chr%s", contig)
@@ -487,16 +487,20 @@ def main(args):
         if args.run_rfmix or args.run_xgmix:
             sample_map = b.read_input(args.pop_sample_map)
             genetic_map = b.read_input(args.genetic_map)
-            phased_ref_vcf = (
-                b.read_input(args.phased_ref_vcf)
-                if args.phased_ref_vcf
-                else ref_e.ofile["vcf.gz"]
-            )
-            phased_cohort_vcf = (
-                b.read_input(args.phased_cohort_vcf)
-                if args.phased_cohort_vcf
-                else e.ofile["vcf.gz"]
-            )
+
+            if args.phased_ref_vcf:
+                phased_ref_vcf = b.read_input(args.phased_ref_vcf)
+            if args.split_phased_vcf:
+                phased_ref_vcf = split_ref_vcf.ofile["vcf.bgz"]
+            else:
+                phased_ref_vcf = ref_e.ofile["vcf.gz"]
+
+            if args.phased_cohort_vcf:
+                phased_cohort_vcf = b.read_input(args.phased_cohort_vcf)
+            if args.split_phased_vcf:
+                phased_cohort_vcf = split_cohort_vcf.ofile["vcf.bgz"]
+            else:
+                phased_cohort_vcf = e.ofile["vcf.gz"]
 
             if args.run_rfmix:
                 logger.info("Running Local Ancestry Inference tool RFMix v2...")
