@@ -490,14 +490,14 @@ def main(args):
 
             if args.phased_ref_vcf:
                 phased_ref_vcf = b.read_input(args.phased_ref_vcf)
-            if args.split_phased_vcf:
+            elif args.split_phased_vcf:
                 phased_ref_vcf = split_ref_vcf.ofile["vcf.bgz"]
             else:
                 phased_ref_vcf = ref_e.ofile["vcf.gz"]
 
             if args.phased_cohort_vcf:
                 phased_cohort_vcf = b.read_input(args.phased_cohort_vcf)
-            if args.split_phased_vcf:
+            elif args.split_phased_vcf:
                 phased_cohort_vcf = split_cohort_vcf.ofile["vcf.bgz"]
             else:
                 phased_cohort_vcf = e.ofile["vcf.gz"]
