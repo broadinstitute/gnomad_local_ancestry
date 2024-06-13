@@ -112,6 +112,7 @@ def split_vcf(
     """
     split = batch.new_job(name="Run split_vcf")
     split.regions([region])
+    split.spot(False)
     split.image(image)
     split.memory(mem)
     split.storage(storage)
@@ -159,6 +160,7 @@ def eagle(
     """
     e = batch.new_job(name=f"Eagle - chr{contig}")
     e.regions([region])
+    e.spot(False)
     e.memory(mem)
     e.storage(storage)
     e.cpu(cpu)
@@ -211,6 +213,7 @@ def rfmix(
     """
     r = batch.new_job(name=f"RFMix - chr{contig}")
     r.regions([region])
+    r.spot(False)
     r.memory(mem)
     r.storage(storage)
     r.cpu(cpu)
@@ -329,6 +332,7 @@ def tractor(
     """
     t = batch.new_job(name=f"Tractor - chr{contig}")
     t.regions([region])
+    t.spot(False)
     t.memory(mem)
     t.storage(storage)
     t.cpu(cpu)
@@ -389,6 +393,7 @@ def generate_lai_vcf(
     """
     v = batch.new_job(name=f"Generate final VCF - chr{contig}")
     v.regions([region])
+    v.spot(False)
     v.memory(mem)
     v.storage(storage)
     v.cpu(cpu)
