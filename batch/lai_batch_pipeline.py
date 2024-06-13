@@ -190,6 +190,7 @@ def rfmix(
     storage: str = "100G",
     cpu: int = 16,
     image: str = "gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
+    em_iterations: int = None,
 ) -> hb.Batch.new_job:
     """
     Run RFMix2 on phased VCF.
@@ -205,6 +206,7 @@ def rfmix(
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
     :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_rfmix:latest".
+    :param em_iterations: Number of EM iterations to run, defaults to None.
     :return: Hail batch job.
     """
     r = batch.new_job(name=f"RFMix - chr{contig}")
@@ -216,19 +218,30 @@ def rfmix(
     r.declare_resource_group(
         ofile={"msp.tsv": "{root}.msp.tsv", "fb.tsv": "{root}.fb.tsv"}
     )
-
-    cmd = f"""
-    ./rfmix \
-        -f {cohort_pvcf} \
-        -r {ref_pvcf} \
-        --chromosome=chr{contig} \
-        -m {sample_map} \
-        -g {rf_genetic_map} \
-        -n 5 \
-        -e 1 \
-        --reanalyze-reference \
-        -o {r.ofile}
-    """
+    if em_iterations:
+        cmd = f"""
+        ./rfmix \
+            -f {cohort_pvcf} \
+            -r {ref_pvcf} \
+            --chromosome=chr{contig} \
+            -m {sample_map} \
+            -g {rf_genetic_map} \
+            -n 5 \
+            -e {em_iterations} \
+            --reanalyze-reference \
+            -o {r.ofile}
+        """
+    else:
+        cmd = f"""
+        ./rfmix \
+            -f {cohort_pvcf} \
+            -r {ref_pvcf} \
+            --chromosome=chr{contig} \
+            -m {sample_map} \
+            -g {rf_genetic_map} \
+            -n 5 \
+            -o {r.ofile}
+        """
 
     r.command(cmd)
     return r
@@ -516,6 +529,7 @@ def main(args):
                     storage=args.lai_storage,
                     cpu=args.lai_cpu,
                     image=args.rfmix_image,
+                    em_iterations=args.em_iterations,
                 )
                 b.write_output(
                     lai.ofile, dest=f"{output_path}chr{contig}/rfmix/output/chr{contig}"
@@ -733,6 +747,12 @@ if __name__ == "__main__":
         "--rfmix-image",
         help="Docker image for RFMix_v2.",
         default="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
+    )
+    lai_args.add_argument(
+        "--em-iterations",
+        help="Number of EM iterations to run in RFMix2.",
+        default=None,
+        type=int,
     )
     lai_args.add_argument(
         "--run-xgmix",
