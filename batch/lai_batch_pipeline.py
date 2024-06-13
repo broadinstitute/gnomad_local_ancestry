@@ -42,11 +42,18 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
             "Can only specify one LAI tool, either RFMix or XGMix (--run-rfmix or --run-xgmix)."
         )
     if args.run_rfmix or args.run_xgmix:
-        if not ((args.run_eagle and args.cohort_vcf) or args.phased_cohort_vcf):
+        if not (
+            (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            or args.phased_cohort_vcf
+        ):
             parser.error(
                 "Need to specify either cohort vcf for eagle to run or pass a phased cohort vcf for RFMix to run (--run-eagle and --cohort-vcf or --phased-cohort-vcf)."
             )
-        if not ((args.run_eagle and args.ref_vcf) or args.phased_ref_vcf):
+        if not (
+            (args.run_eagle and args.ref_vcf)
+            or (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            or args.phased_ref_vcf
+        ):
             parser.error(
                 "Need to specify either reference vcf for eagle to run or pass a phased cohort vcf for RFMix to run (--run-eagle and --reference-vcf or --phased-reference-vcf)."
             )
@@ -60,7 +67,10 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
             )
 
     if args.run_tractor:
-        if not ((args.run_eagle and args.cohort_vcf) or args.phased_cohort_vcf):
+        if not (
+            (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            or args.phased_cohort_vcf
+        ):
             parser.error(
                 "Need to specify either cohort vcf for eagle to run or pass a phased cohort vcf for RFMix to run (--run-eagle and --cohort-vcf or --phased-cohort-vcf)."
             )
