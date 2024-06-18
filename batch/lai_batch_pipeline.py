@@ -510,14 +510,14 @@ def main(args):
             if args.phased_ref_vcf:
                 phased_ref_vcf = b.read_input(args.phased_ref_vcf)
             elif args.split_phased_vcf:
-                phased_ref_vcf = split_ref_vcf.ofile["vcf.bgz"]
+                phased_ref_vcf = split_ref_vcf.ofile["vcf.gz"]
             else:
                 phased_ref_vcf = ref_e.ofile["vcf.gz"]
 
             if args.phased_cohort_vcf:
                 phased_cohort_vcf = b.read_input(args.phased_cohort_vcf)
             elif args.split_phased_vcf:
-                phased_cohort_vcf = split_cohort_vcf.ofile["vcf.bgz"]
+                phased_cohort_vcf = split_cohort_vcf.ofile["vcf.gz"]
             else:
                 phased_cohort_vcf = e.ofile["vcf.gz"]
 
@@ -630,10 +630,10 @@ def main(args):
 if __name__ == "__main__":
     p = init_arg_parser(
         default_cpu=16,
-        default_billing_project="gnomad-production",
-        default_temp_bucket="gnomad-batch",
-        #default_billing_project="gnomad-lai",
-        #default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
+        #default_billing_project="gnomad-production",
+        #default_temp_bucket="gnomad-batch",
+        default_billing_project="gnomad-lai",
+        default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
     )
     multi_args = p.add_argument_group(
         "Multi-step use", "Arguments used by multiple steps"
