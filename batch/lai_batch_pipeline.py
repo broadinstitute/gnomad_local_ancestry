@@ -120,14 +120,14 @@ def split_vcf(
     split.cpu(cpu)
     split.declare_resource_group(
         ofile={"vcf.bgz": "{root}.vcf.bgz", "vcf.bgz.tbi": "{root}.vcf.bgz.tbi"}
-    )  # using recode on this works if we arent piping to bgzip
+    )  # using recode on this works if we arent piping to gzip
 
     # Pipe to bgzip and index the VCF by vcftools
     # Command to execute the split_vcf function
     cmd = f"""vcftools --gzvcf {phased_vcf} \
         --keep {meta_table} \
         --recode \
-        --stdout | bgzip -c > {split.ofile['vcf.bgz']}
+        --stdout | gzip -c > {split.ofile['vcf.bgz']}
 
         tabix -p vcf {split.ofile['vcf.bgz']}
         """
