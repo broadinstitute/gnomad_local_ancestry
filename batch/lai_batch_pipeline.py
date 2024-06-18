@@ -119,10 +119,10 @@ def split_vcf(
     split.storage(storage)
     split.cpu(cpu)
     split.declare_resource_group(
-        ofile={"vcf.gz.tbi": "{root}.vcf.gz.tbi"}
+        ofile={"vcf.gz": "{root}.vcf.gz", "vcf.gz.tbi": "{root}.vcf.gz.tbi"}
     )  # using recode on this works if we arent piping to gzip
 
-    # Pipe to bgzip and index the VCF by vcftools
+    # Pipe to gzip and index the VCF by vcftools
     # Command to execute the split_vcf function
     cmd = f"""vcftools --gzvcf {phased_vcf} \
         --keep {meta_table} \
