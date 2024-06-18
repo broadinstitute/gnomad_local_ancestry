@@ -52,6 +52,7 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
         if not (
             (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
             or (args.run_eagle and (args.ref_vcf or args.split_phased_vcf))
+            or (args.phased_cohort_vcf and args.split_phased_vcf)
             or args.phased_ref_vcf
         ):
             parser.error(
