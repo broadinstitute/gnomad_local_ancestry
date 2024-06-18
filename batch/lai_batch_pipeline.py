@@ -119,7 +119,8 @@ def split_vcf(
     split.storage(storage)
     split.cpu(cpu)
     split.declare_resource_group(
-        ofile={"vcf.gz": "{root}.vcf.gz", "vcf.gz.tbi": "{root}.vcf.gz.tbi"}
+        #ofile={"vcf.gz": "{root}.vcf.gz", "vcf.gz.tbi": "{root}.vcf.gz.tbi"}
+        ofile={"vcf.gz": "{root}.vcf.gz"}
     )  # using recode on this works if we arent piping to gzip
 
     # Pipe to gzip and index the VCF by vcftools
@@ -129,7 +130,6 @@ def split_vcf(
         --recode \
         --stdout | gzip -c > {split.ofile['vcf.gz']}
 
-        tabix -p vcf {split.ofile['vcf.gz']}
         """
     split.command(cmd)
 
@@ -632,8 +632,8 @@ if __name__ == "__main__":
         default_cpu=16,
         default_billing_project="gnomad-production",
         default_temp_bucket="gnomad-batch",
-        #default_billing_project="gnomad-lai",
-        #default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
+        # default_billing_project="gnomad-lai",
+        # default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
     )
     multi_args = p.add_argument_group(
         "Multi-step use", "Arguments used by multiple steps"
