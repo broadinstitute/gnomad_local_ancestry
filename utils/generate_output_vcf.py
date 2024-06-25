@@ -45,10 +45,12 @@ def import_lai_mt(
         "REF": hl.tstr,
         "ALT": hl.tstr,
     }
+    force_bgz = file_extension == ".gz"
     mt = hl.import_matrix_table(
         f"{tractor_output_path}.anc{anc}.{'dosage' if dosage else 'hapcount'}.txt{file_extension}",
         row_fields=row_fields,
         min_partitions=min_partitions,
+        force_bgz=force_bgz,
     )
     mt = mt.key_rows_by().drop("row_id", "ID")
 
