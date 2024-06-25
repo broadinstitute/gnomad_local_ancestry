@@ -119,17 +119,17 @@ def split_vcf(
     split.storage(storage)
     split.cpu(cpu)
     split.declare_resource_group(
-        ofile={"vcf.bgz": "{root}.vcf.bgz", "vcf.bgz.tbi": "{root}.vcf.bgz.tbi"}
+        #ofile={"vcf.gz": "{root}.vcf.gz", "vcf.gz.tbi": "{root}.vcf.gz.tbi"}
+        ofile={"vcf.gz": "{root}.vcf.gz"}
     )  # using recode on this works if we arent piping to gzip
 
-    # Pipe to bgzip and index the VCF by vcftools
+    # Pipe to gzip and index the VCF by vcftools
     # Command to execute the split_vcf function
     cmd = f"""vcftools --gzvcf {phased_vcf} \
         --keep {meta_table} \
         --recode \
-        --stdout | gzip -c > {split.ofile['vcf.bgz']}
+        --stdout | gzip -c > {split.ofile['vcf.gz']}
 
-        tabix -p vcf {split.ofile['vcf.bgz']}
         """
     split.command(cmd)
 
@@ -510,14 +510,14 @@ def main(args):
             if args.phased_ref_vcf:
                 phased_ref_vcf = b.read_input(args.phased_ref_vcf)
             elif args.split_phased_vcf:
-                phased_ref_vcf = split_ref_vcf.ofile["vcf.bgz"]
+                phased_ref_vcf = split_ref_vcf.ofile["vcf.gz"]
             else:
                 phased_ref_vcf = ref_e.ofile["vcf.gz"]
 
             if args.phased_cohort_vcf:
                 phased_cohort_vcf = b.read_input(args.phased_cohort_vcf)
             elif args.split_phased_vcf:
-                phased_cohort_vcf = split_cohort_vcf.ofile["vcf.bgz"]
+                phased_cohort_vcf = split_cohort_vcf.ofile["vcf.gz"]
             else:
                 phased_cohort_vcf = e.ofile["vcf.gz"]
 
@@ -632,7 +632,7 @@ if __name__ == "__main__":
         default_cpu=16,
         default_billing_project="gnomad-production",
         default_temp_bucket="gnomad-batch",
-        # default_billing_project="kore-trial",
+        # default_billing_project="gnomad-lai",
         # default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
     )
     multi_args = p.add_argument_group(
