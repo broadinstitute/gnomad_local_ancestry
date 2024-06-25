@@ -26,6 +26,7 @@ def import_lai_mt(
     file_extension: str = "",
     dosage: bool = True,
     min_partitions: int = 32,
+    batch_run: bool = True,
 ) -> hl.MatrixTable:
     """
     Import Tractor's dosage and hapcount files as hail MatrixTables.
@@ -36,6 +37,7 @@ def import_lai_mt(
     :param dosage: Whether the ancestry file being converted is a dosage file.
         When true, dosage file will be converted, and when false, haps file will be converted. Defaults to True.
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
+    :param batch_run: Whether the run is for a batch run, defaults to True.
     :return: Dosage or hapcounts MatrixTable.
     """
     row_fields = {
@@ -46,8 +48,15 @@ def import_lai_mt(
         "ALT": hl.tstr,
     }
     force_bgz = file_extension == ".gz"
+
+    tractor_file = (
+        tractor_output_path
+        if batch_run
+        else f"{tractor_output_path}.anc{anc}.{'dosage' if dosage else 'hapcount'}.txt{file_extension}"
+    )
+
     mt = hl.import_matrix_table(
-        f"{tractor_output_path}.anc{anc}.{'dosage' if dosage else 'hapcount'}.txt{file_extension}",
+        tractor_file,
         row_fields=row_fields,
         min_partitions=min_partitions,
         force_bgz=force_bgz,
