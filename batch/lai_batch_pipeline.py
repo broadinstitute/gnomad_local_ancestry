@@ -119,7 +119,7 @@ def split_vcf(
     split.storage(storage)
     split.cpu(cpu)
     split.declare_resource_group(
-        #ofile={"vcf.gz": "{root}.vcf.gz", "vcf.gz.tbi": "{root}.vcf.gz.tbi"}
+        # ofile={"vcf.gz": "{root}.vcf.gz", "vcf.gz.tbi": "{root}.vcf.gz.tbi"}
         ofile={"vcf.gz": "{root}.vcf.gz"}
     )  # using recode on this works if we arent piping to gzip
 
@@ -341,12 +341,12 @@ def tractor(
     rg_def = {}
     file_extension = ".gz" if zip_output else ""
     for i in range(n_ancs):
-        rg_def[f"vcf{i}{file_extension}"] = f"{{root}}.anc{i}.vcf{file_extension}"
+        rg_def[f"anc{i}.vcf{file_extension}"] = f"{{root}}.anc{i}.vcf{file_extension}"
         rg_def[
-            f"dos{i}.txt{file_extension}"
+            f"anc{i}.dosage.txt{file_extension}"
         ] = f"{{root}}.anc{i}.dosage.txt{file_extension}"
         rg_def[
-            f"ancdos{i}.txt{file_extension}"
+            f"anc{i}.hapcount.txt{file_extension}"
         ] = f"{{root}}.anc{i}.hapcount.txt{file_extension}"
 
     t.declare_resource_group(ofile=rg_def)
