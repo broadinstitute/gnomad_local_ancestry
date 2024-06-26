@@ -2,6 +2,7 @@
 import argparse
 import logging
 from typing import Dict, List
+import os
 
 from gnomad.resources.config import (
     gnomad_public_resource_configuration,
@@ -10,6 +11,7 @@ from gnomad.resources.config import (
 from gnomad.resources.grch38.gnomad import public_release
 from gnomad.utils.filtering import filter_to_adj
 import hail as hl
+import subprocess
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger(__name__)
@@ -19,6 +21,22 @@ gnomad_public_resource_configuration.source = (
     GnomadPublicResourceSource.GOOGLE_CLOUD_PUBLIC_DATASETS
 )
 
+def bgzip_file(input_file: str, output_file: str) -> None:
+    """
+    Run bgzip on the input file to convert it to a block gzipped file.
+
+    :param input_file: Path to the input gzip file.
+    :param output_file: Path to the output bgzip file.
+    """
+    subprocess.run(f"gunzip -c {input_file} | bgzip -c > {output_file}", shell=True, check=True)
+
+def convert_files_to_bgzip(tractor_output_path: str, ancestries: Dict[int, str], file_extension: str):
+    for num in ancestries.keys():
+        for file_type in ['dosage', 'hapcount']:
+            input_file = f"{tractor_output_path}.anc{num}.{file_type}.txt{file_extension}"
+            output_file = f"{tractor_output_path}.anc{num}.{file_type}.txt.bgz"
+            logger.info(f"Converting {input_file} to {output_file}")
+            bgzip_file(input_file, output_file)
 
 def import_lai_mt(
     anc: int,
@@ -47,20 +65,27 @@ def import_lai_mt(
         "REF": hl.tstr,
         "ALT": hl.tstr,
     }
-    force_bgz = file_extension == ".gz"
+    # force_bgz = file_extension == ".gz"
 
-    tractor_file = (
-        tractor_output_path
-        if batch_run
-        else f"{tractor_output_path}.anc{anc}.{'dosage' if dosage else 'hapcount'}.txt{file_extension}"
-    )
+    file_type = 'dosage' if dosage else 'hapcount'
+    tractor_file = f"{tractor_output_path}.anc{anc}.{file_type}.txt.bgz"
 
-    mt = hl.import_matrix_table(
-        tractor_file,
-        row_fields=row_fields,
+    # Import the bgzipped file as a table
+    table = hl.import_table(
+        bgzip_output_file,
+        types={'CHROM': hl.tstr, 'POS': hl.tint, 'ID': hl.tstr, 'REF': hl.tstr, 'ALT': hl.tstr},
         min_partitions=min_partitions,
-        force_bgz=force_bgz,
+        force_bgz=True,
     )
+
+    # Convert table to matrix table
+    mt = table.to_matrix_table(row_key=['CHROM', 'POS'], col_key=['ID'], row_fields=row_fields)
+    # mt = hl.import_matrix_table(
+    #     tractor_file,
+    #     row_fields=row_fields,
+    #     min_partitions=min_partitions,
+    #     force_bgz=True,
+    # )
     mt = mt.key_rows_by().drop("row_id", "ID")
 
     return mt.key_rows_by(
@@ -136,7 +161,8 @@ def generate_joint_vcf(
     min_partitions: int = 32,
     mt_path_for_adj: str = "",
     add_gnomad_af: bool = False,
-    gnomad_af_pops: List[str] = ["amr", "afr", "eas", "nfe"],
+    #Take out eas and amr
+    gnomad_af_pops: List[str] = ["afr", "nfe"],
 ) -> None:
     """
     Generate a joint VCF from Trator's output files with ancestry-specific AC, AN, AF annotations.
@@ -157,6 +183,7 @@ def generate_joint_vcf(
     )
     file_extension = ".gz" if is_zipped else ""
     ancestries = get_msp_ancestries(msp_file)
+    convert_files_to_bgzip(tractor_output, ancestries, file_extension)
     anc_mts = generate_anc_mt_dict(
         ancs=ancestries,
         output_path=tractor_output,
