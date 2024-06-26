@@ -85,7 +85,7 @@ def generate_anc_mt_dict(
     :return: Dictionary with ancestry (key) and corresponding Matrixtable (value).
     """
     logger.info(
-        "Generating ancestry matrixtable dictionary, ancestries are -> %s", ancs
+        "Generating the ancestry matrixtable dictionary, ancestries are -> %s", ancs
     )
     ancestry_mts = {}
     for num, anc in ancs.items():
