@@ -72,7 +72,7 @@ def import_lai_mt(
 
     # Import the bgzipped file as a table
     table = hl.import_table(
-        bgzip_output_file,
+        tractor_file,
         types={'CHROM': hl.tstr, 'POS': hl.tint, 'ID': hl.tstr, 'REF': hl.tstr, 'ALT': hl.tstr},
         min_partitions=min_partitions,
         force_bgz=True,
