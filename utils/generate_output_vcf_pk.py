@@ -78,6 +78,8 @@ def import_lai_mt(
         min_partitions=min_partitions,
         force_bgz=True,
     )
+    #make sure no duplicates 
+    row_fields = [field for field in table.row if field not in ['CHROM', 'POS', 'ID']]
 
     # Convert table to matrix table
     mt = table.to_matrix_table(row_key=['CHROM', 'POS'], col_key=['ID'], row_fields=row_fields)
