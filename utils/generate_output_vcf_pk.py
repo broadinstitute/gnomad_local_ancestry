@@ -58,13 +58,14 @@ def import_lai_mt(
     :param batch_run: Whether the run is for a batch run, defaults to True.
     :return: Dosage or hapcounts MatrixTable.
     """
-    row_fields = {
-        "CHROM": hl.tstr,
-        "POS": hl.tint,
-        "ID": hl.tstr,
-        "REF": hl.tstr,
-        "ALT": hl.tstr,
-    }
+    # row_fields = {
+    #     "CHROM": hl.tstr,
+    #     "POS": hl.tint,
+    #     "ID": hl.tstr,
+    #     "REF": hl.tstr,
+    #     "ALT": hl.tstr,
+    # }
+    row_fields = ['CHROM', 'POS', 'ID', 'REF', 'ALT']  # List of column names, not a dict
     # force_bgz = file_extension == ".gz"
 
     file_type = 'dosage' if dosage else 'hapcount'
