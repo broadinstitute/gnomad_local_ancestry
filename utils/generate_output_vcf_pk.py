@@ -20,24 +20,58 @@ logger.setLevel(logging.INFO)
 gnomad_public_resource_configuration.source = (
     GnomadPublicResourceSource.GOOGLE_CLOUD_PUBLIC_DATASETS
 )
+#keep this when the full code works
+# def bgzip_file(input_file: str, output_file: str) -> None:
+#     """
+#     Run bgzip on the input file to convert it to a block gzipped file.
+#
+#     :param input_file: Path to the input gzip file.
+#     :param output_file: Path to the output bgzip file.
+#     """
+#     subprocess.run(f"gunzip -c {input_file} | bgzip -c > {output_file}", shell=True, check=True)
+#
+# def convert_files_to_bgzip(tractor_output_path: str, ancestries: Dict[int, str], file_extension: str):
+#     for num in ancestries.keys():
+#         for file_type in ['dosage', 'hapcount']:
+#             input_file = f"{tractor_output_path}.anc{num}.{file_type}.txt{file_extension}"
+#             output_file = f"{tractor_output_path}.anc{num}.{file_type}.txt.bgz"
+#             logger.info(f"Converting {input_file} to {output_file}")
+#             bgzip_file(input_file, output_file)
 
-def bgzip_file(input_file: str, output_file: str) -> None:
-    """
-    Run bgzip on the input file to convert it to a block gzipped file.
 
-    :param input_file: Path to the input gzip file.
-    :param output_file: Path to the output bgzip file.
-    """
-    subprocess.run(f"gunzip -c {input_file} | bgzip -c > {output_file}", shell=True, check=True)
 
-def convert_files_to_bgzip(tractor_output_path: str, ancestries: Dict[int, str], file_extension: str):
-    for num in ancestries.keys():
-        for file_type in ['dosage', 'hapcount']:
-            input_file = f"{tractor_output_path}.anc{num}.{file_type}.txt{file_extension}"
-            output_file = f"{tractor_output_path}.anc{num}.{file_type}.txt.bgz"
-            logger.info(f"Converting {input_file} to {output_file}")
-            bgzip_file(input_file, output_file)
 
+
+#HARDCODED TO PUT UPLOAD IN GCP DIR
+# def bgzip_file(input_file: str) -> None:
+#     """
+#     Run bgzip on the input file to convert it to a block gzipped file and upload to GCS.
+#
+#     :param input_file: Path to the input file.
+#     """
+#     local_output_file = f"{os.path.splitext(input_file)[0]}.bgz"
+#     gcs_output_dir = "gs://kore-sandbox-storage/production/afr/outputschr22/tractor/output/chr22"
+#     gcs_output_file = f"{gcs_output_dir}/{os.path.basename(local_output_file)}"
+#
+#     if not os.path.exists(local_output_file):
+#         subprocess.run(f"gunzip -c {input_file} | bgzip -c > {local_output_file}", shell=True, check=True)
+#         logger.info(f"Created {local_output_file} from {input_file}")
+#
+#     # Upload to GCS
+#     subprocess.run(f"gsutil cp {local_output_file} {gcs_output_file}", shell=True, check=True)
+#     logger.info(f"Uploaded {local_output_file} to {gcs_output_file}")
+#
+# def convert_files_to_bgzip(tractor_output_path: str, ancestries: Dict[int, str], file_extension: str):
+#     for num in ancestries.keys():
+#         for file_type in ['dosage', 'hapcount']:
+#             input_file = f"{tractor_output_path}.anc{num}.{file_type}.txt{file_extension}"
+#             bgzip_file(input_file)
+#
+# Set the JVM memory settings
+#os.environ['PYSPARK_SUBMIT_ARGS'] = '--driver-memory 80g --executor-memory 80g pyspark-shell'
+
+
+#modified by pk
 def import_lai_mt(
     anc: int,
     tractor_output_path: str = "tractor/test_path",
@@ -48,28 +82,9 @@ def import_lai_mt(
 ) -> hl.MatrixTable:
     """
     Import Tractor's dosage and hapcount files as hail MatrixTables.
-
-    :param anc: File's ancestry.
-    :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
-    :param file_extension: If zipped, zip file extension, defaults to "".
-    :param dosage: Whether the ancestry file being converted is a dosage file.
-        When true, dosage file will be converted, and when false, haps file will be converted. Defaults to True.
-    :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
-    :param batch_run: Whether the run is for a batch run, defaults to True.
-    :return: Dosage or hapcounts MatrixTable.
     """
-    # row_fields = {
-    #     "CHROM": hl.tstr,
-    #     "POS": hl.tint,
-    #     "ID": hl.tstr,
-    #     "REF": hl.tstr,
-    #     "ALT": hl.tstr,
-    # }
-    row_fields = ['CHROM', 'POS', 'ID', 'REF', 'ALT']  # List of column names, not a dict
-    # force_bgz = file_extension == ".gz"
-
     file_type = 'dosage' if dosage else 'hapcount'
-    tractor_file = f"{tractor_output_path}.anc{anc}.{file_type}.txt.bgz"
+    tractor_file = f"{tractor_output_path}.anc{anc}.{file_type}.txt{file_extension}"
 
     # Import the bgzipped file as a table
     table = hl.import_table(
@@ -78,23 +93,51 @@ def import_lai_mt(
         min_partitions=min_partitions,
         force_bgz=True,
     )
-    #make sure no duplicates 
-    row_fields = [field for field in table.row if field not in ['CHROM', 'POS', 'ID']]
 
-    # Convert table to matrix table
-    mt = table.to_matrix_table(row_key=['CHROM', 'POS'], col_key=['ID'], row_fields=row_fields)
-    # mt = hl.import_matrix_table(
-    #     tractor_file,
-    #     row_fields=row_fields,
-    #     min_partitions=min_partitions,
-    #     force_bgz=True,
-    # )
-    mt = mt.key_rows_by().drop("row_id", "ID")
+    # Identify sample IDs excluding key fields
+    sample_ids = [field for field in table.row if field not in ['CHROM', 'POS', 'ID', 'REF', 'ALT']]
 
-    return mt.key_rows_by(
-        locus=hl.locus(mt.CHROM, mt.POS, reference_genome="GRCh38"),
-        alleles=[mt.REF, mt.ALT],
-    ).drop("CHROM", "POS", "REF", "ALT")
+    # Convert to MatrixTable
+    # Annotate with locus and alleles
+    table = table.annotate(
+        locus=hl.locus(table.CHROM, table.POS, reference_genome='GRCh38'),
+        alleles=[table.REF, table.ALT]
+    ).drop('CHROM', 'POS', 'REF', 'ALT', 'ID')
+
+    logger.info("Generating table after locus and alleles are defined...")
+    columns_to_show = ['locus', 'alleles'] + sample_ids[:3]  # Select 'locus', 'alleles', and first 3 sample IDs
+    table_to_show = table.select(*columns_to_show)
+    # Show the first `n` rows
+    table_to_show.show(5)
+
+    # Manually reshape the table to long format
+    table = table.annotate(entries=hl.array([hl.struct(s=s, x=table[s]) for s in sample_ids]))
+    table = table.explode('entries')
+    table = table.transmute(s=table.entries.s, x=table.entries.x)
+
+    # # Manually reshape the table to long format - this didn't work
+    # exploded_rows = []
+    # for s in sample_ids:
+    #     exploded_row = table.select('locus', 'alleles', s).rename({s: 'x'}).annotate(s=hl.str(s))
+    #     exploded_rows.append(exploded_row)
+    #
+    # long_table = exploded_rows[0]
+    # for et in exploded_rows[1:]:
+    #     long_table = long_table.union(et)
+    # columns_to_show = ['locus', 'alleles', 's', 'x'] + sample_ids[:3]
+    # table_to_show = table.select(*columns_to_show)
+    # Show the first `n` rows
+    
+    logger.info("Generating table after exploding...")
+    table_to_show = table.select(*columns_to_show)
+    table_to_show.show(5)
+    
+    # Convert to MatrixTable
+    mt = table.to_matrix_table(row_key=['locus', 'alleles'], col_key=['s'])
+    # Set the column key to 's'
+    mt = mt.key_cols_by('s')
+    #mt.describe()
+    return mt
 
 
 def generate_anc_mt_dict(
@@ -105,32 +148,20 @@ def generate_anc_mt_dict(
 ) -> Dict[str, hl.MatrixTable]:
     """
     Generate dictionary where the key is ancestry and values are the ancestry's corresponding MatrixTable with hap and dosage annotations.
-
-    :param ancs: Dictionary with keys as numerical value of msp file and values as the corresponding ancestry.
-    :param output_path: Path to Tractor's output files, defaults to "tractor/test_path".
-    :param file_extension: If zipped, zip file extension, defaults to "".
-    :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
-    :return: Dictionary with ancestry (key) and corresponding Matrixtable (value).
     """
-    logger.info(
-        "Generating the ancestry matrixtable dictionary, ancestries are -> %s", ancs
-    )
+    logger.info("Generating the ancestry matrixtable dictionary, ancestries are -> %s", ancs)
     ancestry_mts = {}
     for num, anc in ancs.items():
-        dos = import_lai_mt(
-            num, output_path, file_extension, dosage=True, min_partitions=min_partitions
-        )
-        hap = import_lai_mt(
-            num,
-            output_path,
-            file_extension,
-            dosage=False,
-            min_partitions=min_partitions,
-        )
+        dos = import_lai_mt(num, output_path, file_extension, dosage=True, min_partitions=min_partitions)
+        hap = import_lai_mt(num, output_path, file_extension, dosage=False, min_partitions=min_partitions)
+        #dos.describe()
+        #hap.describe()
+        # Transmute entries to include both dosage and hapcount
         dos = dos.transmute_entries(
-            **{f"{anc}_dos": dos.x, f"{anc}_hap": hap[dos.row_key, dos.col_id].x}
-        )
+            **{f"{anc}_dos": hl.int32(dos.x), f"{anc}_hap": hl.int32(hap[dos.row_key, dos.col_key].x)}
+             )
         ancestry_mts[anc] = dos
+
     return ancestry_mts
 
 
@@ -179,14 +210,15 @@ def generate_joint_vcf(
     :return: None; exports VCF to output path.
     """
     logger.info(
-        "Generating joint VCF with annotated AFs. msp file is: %s, tractor output is %s, is_zipped is %s",
+        "TESTING WORKS: Generating joint VCF with annotated AFs. msp file is: %s, tractor output is %s, is_zipped is %s",
         msp_file,
         tractor_output,
         is_zipped,
     )
-    file_extension = ".gz" if is_zipped else ""
+    #this should be changed back to '.gz' when full code works
+    file_extension = ".bgz" if is_zipped else ""
     ancestries = get_msp_ancestries(msp_file)
-    convert_files_to_bgzip(tractor_output, ancestries, file_extension)
+    #convert_files_to_bgzip(tractor_output, ancestries, file_extension)
     anc_mts = generate_anc_mt_dict(
         ancs=ancestries,
         output_path=tractor_output,
@@ -207,12 +239,13 @@ def generate_joint_vcf(
         )
 
     mt = mt.annotate_entries(**dos_hap_dict)
-
+    #mt.describe()
     if mt_path_for_adj:
         # This step requires access to an MT generated from pipeline's input VCF because Tractor's output does not contain the fields necessary for adj filtering (GT, GQ, DP, AB).
         logger.info("Filtering LAI output to adjusted genotypes...")
         adj_mt = hl.read_matrix_table(mt_path_for_adj)
         adj_mt = filter_to_adj(adj_mt)
+        #adj_mt.describe()
         mt = mt.filter_entries(hl.is_defined(adj_mt[mt.row_key, mt.col_key]))
 
     for anc in anc_mts:
@@ -236,7 +269,7 @@ def generate_joint_vcf(
         callstat_dict.update(
             {
                 f"gnomad_AF_{pop}": gnomad_release[mt.row_key].freq[
-                    hl.eval(gnomad_release.freq_index_dict[f"{pop}-adj"])
+                    hl.eval(gnomad_release.freq_index_dict[f"{pop}_adj"])
                 ]["AF"]
                 for pop in gnomad_af_pops
             }
