@@ -85,59 +85,27 @@ def import_lai_mt(
     """
     file_type = 'dosage' if dosage else 'hapcount'
     tractor_file = f"{tractor_output_path}.anc{anc}.{file_type}.txt{file_extension}"
-
-    # Import the bgzipped file as a table
-    table = hl.import_table(
+    mt = hl.import_matrix_table(
         tractor_file,
-        types={'CHROM': hl.tstr, 'POS': hl.tint, 'ID': hl.tstr, 'REF': hl.tstr, 'ALT': hl.tstr},
+        row_fields={'CHROM': hl.tstr, 'POS': hl.tint, 'ID': hl.tstr, 'REF': hl.tstr, 'ALT': hl.tstr},
         min_partitions=min_partitions,
-        force_bgz=True,
+        force_bgz=True
     )
 
-    # Identify sample IDs excluding key fields
-    sample_ids = [field for field in table.row if field not in ['CHROM', 'POS', 'ID', 'REF', 'ALT']]
+    # Key rows by locus and alleles, and drop unnecessary fields
+    mt = mt.key_rows_by(
+        locus=hl.locus(mt.CHROM, mt.POS, reference_genome="GRCh38"),
+        alleles=[mt.REF, mt.ALT]
+    ).drop("CHROM", "POS", "REF", "ALT", "ID")
+    sample_ids = mt.col_key.collect()
 
-    # Convert to MatrixTable
-    # Annotate with locus and alleles
-    table = table.annotate(
-        locus=hl.locus(table.CHROM, table.POS, reference_genome='GRCh38'),
-        alleles=[table.REF, table.ALT]
-    ).drop('CHROM', 'POS', 'REF', 'ALT', 'ID')
+    mt = mt.key_cols_by(s=mt.col_id).drop('col_id')
+    mt = mt.drop('row_id')
+    mt.describe()
+    #mt.show(5)
 
-    logger.info("Generating table after locus and alleles are defined...")
-    columns_to_show = ['locus', 'alleles'] + sample_ids[:3]  # Select 'locus', 'alleles', and first 3 sample IDs
-    table_to_show = table.select(*columns_to_show)
-    # Show the first `n` rows
-    table_to_show.show(5)
-
-    # Manually reshape the table to long format
-    table = table.annotate(entries=hl.array([hl.struct(s=s, x=table[s]) for s in sample_ids]))
-    table = table.explode('entries')
-    table = table.transmute(s=table.entries.s, x=table.entries.x)
-
-    # # Manually reshape the table to long format - this didn't work
-    # exploded_rows = []
-    # for s in sample_ids:
-    #     exploded_row = table.select('locus', 'alleles', s).rename({s: 'x'}).annotate(s=hl.str(s))
-    #     exploded_rows.append(exploded_row)
-    #
-    # long_table = exploded_rows[0]
-    # for et in exploded_rows[1:]:
-    #     long_table = long_table.union(et)
-    # columns_to_show = ['locus', 'alleles', 's', 'x'] + sample_ids[:3]
-    # table_to_show = table.select(*columns_to_show)
-    # Show the first `n` rows
-    
-    logger.info("Generating table after exploding...")
-    table_to_show = table.select(*columns_to_show)
-    table_to_show.show(5)
-    
-    # Convert to MatrixTable
-    mt = table.to_matrix_table(row_key=['locus', 'alleles'], col_key=['s'])
-    # Set the column key to 's'
-    mt = mt.key_cols_by('s')
-    #mt.describe()
     return mt
+
 
 
 def generate_anc_mt_dict(
