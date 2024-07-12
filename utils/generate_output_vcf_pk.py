@@ -99,7 +99,7 @@ def import_lai_mt(
     ).drop("CHROM", "POS", "REF", "ALT", "ID")
     sample_ids = mt.col_key.collect()
 
-    mt = mt.key_cols_by(s=mt.col_id).drop('col_id')
+    mt = mt.rename({'col_id': 's'})
     mt = mt.drop('row_id')
     mt.describe()
     #mt.show(5)
