@@ -13,9 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # clean up apt cache
     rm -rf /var/lib/apt/lists/*
 
-# Install Java 8 for hail
+# Install Java 11 for Hail
 RUN mkdir -p /etc/apt/keyrings
-RUN wget -O - https://packages.adoptium.net/artifactory/api/gpg/key/public | tee /etc/apt/keyrings/adoptium.asc && echo "deb [signed-by=/etc/apt/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print$2}' /etc/os-release) main" | tee /etc/apt/sources.list.d/adoptium.list && apt-get update && apt install -y --no-install-recommends temurin-8-jdk
+RUN wget -O - https://packages.adoptium.net/artifactory/api/gpg/key/public | tee /etc/apt/keyrings/adoptium.asc && echo "deb [signed-by=/etc/apt/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print$2}' /etc/os-release) main" | tee /etc/apt/sources.list.d/adoptium.list && apt-get update && apt install -y --no-install-recommends temurin-11-jdk
 
 # Install python packages
 RUN apt-get update \
@@ -33,7 +33,7 @@ RUN python3 -m pip install --upgrade pip
 COPY generate_output_vcf_pk.py generate_output_vcf_pk.py
 
 # Install hail and other python libraries
-ENV HAIL_VERSION="0.2.122"
+ENV HAIL_VERSION="0.2.128"
 RUN python3 -m pip install \
     hail==${HAIL_VERSION} \
     gnomad
@@ -47,4 +47,4 @@ RUN export SPARK_HOME=$(find_spark_home.py) && \
     -e 's:spark\.hadoop\.google\.cloud\.auth\.service\.account\.enable.*:spark.hadoop.google.cloud.auth.service.account.enable true:' \
     -e 's:spark\.hadoop\.google\.cloud\.auth\.service\.account\.json\.keyfile.*:spark\.hadoop\.google\.cloud\.auth\.service\.account\.json\.keyfile /gsa-key/key.json:'
 
-ENV PYSPARK_SUBMIT_ARGS="--driver-memory 8g --executor-memory 8g pyspark-shell"
+ENV PYSPARK_SUBMIT_ARGS="--driver-memory 20g --executor-memory 20g pyspark-shell"
