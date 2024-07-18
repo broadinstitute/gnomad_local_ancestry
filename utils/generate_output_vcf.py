@@ -19,6 +19,24 @@ gnomad_public_resource_configuration.source = (
     GnomadPublicResourceSource.GOOGLE_CLOUD_PUBLIC_DATASETS
 )
 
+#command for converting file from vcf.gz to vcf.bgz
+def bgzip_file(input_file: str, output_file: str) -> None:
+    """
+    Run bgzip on the input file to convert it to a block gzipped file.
+
+    :param input_file: Path to the input gzip file.
+    :param output_file: Path to the output bgzip file.
+    """
+    subprocess.run(f"gunzip -c {input_file} | bgzip -c > {output_file}", shell=True, check=True)
+    
+#convert file from vcf.gz to vcf.bgz
+def convert_files_to_bgzip(tractor_output_path: str, ancestries: Dict[int, str], file_extension: str):
+    for num in ancestries.keys():
+        for file_type in ['dosage', 'hapcount']:
+            input_file = f"{tractor_output_path}.anc{num}.{file_type}.txt{file_extension}"
+            output_file = f"{tractor_output_path}.anc{num}.{file_type}.txt.bgz"
+            logger.info(f"Converting {input_file} to {output_file}")
+            bgzip_file(input_file, output_file)
 
 def import_lai_mt(
     anc: int,
@@ -40,33 +58,28 @@ def import_lai_mt(
     :param batch_run: Whether the run is for a batch run, defaults to True.
     :return: Dosage or hapcounts MatrixTable.
     """
-    row_fields = {
-        "CHROM": hl.tstr,
-        "POS": hl.tint,
-        "ID": hl.tstr,
-        "REF": hl.tstr,
-        "ALT": hl.tstr,
-    }
-    force_bgz = file_extension == ".gz"
+    file_type = 'dosage' if dosage else 'hapcount'
+    tractor_file = f"{tractor_output_path}.anc{anc}.{file_type}.txt{file_extension}"
+    output_file = f"{tractor_output_path}.anc{anc}.{file_type}.table.ht"
 
-    tractor_file = (
-        tractor_output_path
-        if batch_run
-        else f"{tractor_output_path}.anc{anc}.{'dosage' if dosage else 'hapcount'}.txt{file_extension}"
-    )
-
+    # return mt
     mt = hl.import_matrix_table(
         tractor_file,
-        row_fields=row_fields,
+        row_fields={'CHROM': hl.tstr, 'POS': hl.tint, 'ID': hl.tstr, 'REF': hl.tstr, 'ALT': hl.tstr},
         min_partitions=min_partitions,
-        force_bgz=force_bgz,
+        force_bgz=True
     )
-    mt = mt.key_rows_by().drop("row_id", "ID")
 
-    return mt.key_rows_by(
+    # Key rows by locus and alleles, and drop unnecessary fields
+    mt = mt.key_rows_by(
         locus=hl.locus(mt.CHROM, mt.POS, reference_genome="GRCh38"),
-        alleles=[mt.REF, mt.ALT],
-    ).drop("CHROM", "POS", "REF", "ALT")
+        alleles=[mt.REF, mt.ALT]
+    ).drop("CHROM", "POS", "REF", "ALT", "ID")
+    sample_ids = mt.col_key.collect()
+    mt = mt.rename({'col_id': 's'})
+    mt = mt.drop('row_id')
+
+    return mt
 
 
 def generate_anc_mt_dict(
@@ -84,25 +97,18 @@ def generate_anc_mt_dict(
     :param min_partitions: Minimum partitions to use when reading in tsv files as hail MTs, defaults to 32.
     :return: Dictionary with ancestry (key) and corresponding Matrixtable (value).
     """
-    logger.info(
-        "Generating the ancestry matrixtable dictionary, ancestries are -> %s", ancs
-    )
+    logger.info("Generating the ancestry matrixtable dictionary, ancestries are -> %s", ancs)
     ancestry_mts = {}
     for num, anc in ancs.items():
-        dos = import_lai_mt(
-            num, output_path, file_extension, dosage=True, min_partitions=min_partitions
-        )
-        hap = import_lai_mt(
-            num,
-            output_path,
-            file_extension,
-            dosage=False,
-            min_partitions=min_partitions,
-        )
+        dos = import_lai_mt(num, output_path, file_extension, dosage=True, min_partitions=min_partitions)
+        hap = import_lai_mt(num, output_path, file_extension, dosage=False, min_partitions=min_partitions)
+
+        # Transmute entries to include both dosage and hapcount
         dos = dos.transmute_entries(
-            **{f"{anc}_dos": dos.x, f"{anc}_hap": hap[dos.row_key, dos.col_id].x}
-        )
+            **{f"{anc}_dos": hl.int32(dos.x), f"{anc}_hap": hl.int32(hap[dos.row_key, dos.col_key].x)}
+             )
         ancestry_mts[anc] = dos
+
     return ancestry_mts
 
 
@@ -157,6 +163,7 @@ def generate_joint_vcf(
     )
     file_extension = ".gz" if is_zipped else ""
     ancestries = get_msp_ancestries(msp_file)
+    convert_files_to_bgzip(tractor_output, ancestries, file_extension)
     anc_mts = generate_anc_mt_dict(
         ancs=ancestries,
         output_path=tractor_output,
