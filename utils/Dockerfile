@@ -30,7 +30,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Upgrade pip to latest version
 RUN python3 -m pip install --upgrade pip
 
-COPY generate_output_vcf_pk.py generate_output_vcf_pk.py
+COPY generate_output_vcf.py generate_output_vcf.py
 
 # Install hail and other python libraries
 ENV HAIL_VERSION="0.2.128"
