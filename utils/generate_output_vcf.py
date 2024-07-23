@@ -142,7 +142,7 @@ def generate_joint_vcf(
     min_partitions: int = 32,
     mt_path_for_adj: str = "",
     add_gnomad_af: bool = False,
-    gnomad_af_pops: List[str] = ["amr", "afr", "eas", "nfe"],
+    gnomad_af_pops: List[str] = ["afr", "nfe"],
 ) -> None:
     """
     Generate a joint VCF from Trator's output files with ancestry-specific AC, AN, AF annotations.
@@ -164,6 +164,7 @@ def generate_joint_vcf(
     file_extension = ".gz" if is_zipped else ""
     ancestries = get_msp_ancestries(msp_file)
     convert_files_to_bgzip(tractor_output, ancestries, file_extension)
+    file_extension = ".bgz" if is_zipped else ""
     anc_mts = generate_anc_mt_dict(
         ancs=ancestries,
         output_path=tractor_output,
