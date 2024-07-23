@@ -214,7 +214,7 @@ def generate_joint_vcf(
         callstat_dict.update(
             {
                 f"gnomad_AF_{pop}": gnomad_release[mt.row_key].freq[
-                    hl.eval(gnomad_release.freq_index_dict[f"{pop}-adj"])
+                    hl.eval(gnomad_release.freq_index_dict[f"{pop}_adj"])
                 ]["AF"]
                 for pop in gnomad_af_pops
             }
