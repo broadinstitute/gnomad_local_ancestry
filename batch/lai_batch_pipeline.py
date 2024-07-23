@@ -399,6 +399,7 @@ def generate_lai_vcf(
     v.storage(storage)
     v.cpu(cpu)
     v.image(image)
+    v.env('PYSPARK_SUBMIT_ARGS', '--driver-memory 110g --executor-memory 110g pyspark-shell')
     v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
 
     if mt_path_for_adj:
