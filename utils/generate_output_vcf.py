@@ -1,6 +1,7 @@
 # noqa: D100
 import argparse
 import logging
+import subprocess
 from typing import Dict, List
 
 from gnomad.resources.config import (
