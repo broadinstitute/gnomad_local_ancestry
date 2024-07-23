@@ -61,8 +61,7 @@ def import_lai_mt(
     """
     file_type = 'dosage' if dosage else 'hapcount'
     tractor_file = f"{tractor_output_path}.anc{anc}.{file_type}.txt{file_extension}"
-    output_file = f"{tractor_output_path}.anc{anc}.{file_type}.table.ht"
-
+    
     # return mt
     mt = hl.import_matrix_table(
         tractor_file,
