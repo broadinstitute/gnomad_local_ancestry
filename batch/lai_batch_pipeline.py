@@ -2,9 +2,7 @@
 import argparse
 import logging
 from typing import Any
-import subprocess
 
-import hail as hl
 import hailtop.batch as hb
 
 from tgg.batch.batch_utils import init_arg_parser, run_batch
@@ -25,6 +23,7 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
     """
     if not (
         args.run_eagle
+        or args.split_phased_vcf
         or args.run_rfmix
         or args.run_xgmix
         or args.run_tractor
@@ -34,22 +33,30 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
             "Need to specify at least one step to run (--run-eagle, --run-rfmix, --run-xgmix, --run-tractor, and/or --make-lai-vcf)."
         )
     if args.run_eagle:
-        if not (args.sample_vcf or args.ref_vcf):
+        if not (args.cohort_vcf or args.ref_vcf):
             parser.error(
-                "Need to specify either sample and/or reference vcfs (--sample-vcf or --ref-vcf)."
+                "Need to specify either sample and/or reference vcfs (--cohort-vcf or --ref-vcf)."
             )
     if args.run_rfmix and args.run_xgmix:
         parser.error(
             "Can only specify one LAI tool, either RFMix or XGMix (--run-rfmix or --run-xgmix)."
         )
     if args.run_rfmix or args.run_xgmix:
-        if not ((args.run_eagle and args.sample_vcf) or args.phased_sample_vcf):
+        if not (
+            (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            or args.phased_cohort_vcf
+        ):
             parser.error(
-                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)."
+                "Need to specify either cohort vcf for eagle to run or pass a phased cohort vcf for RFMix to run (--run-eagle and --cohort-vcf or --phased-cohort-vcf)."
             )
-        if not ((args.run_eagle and args.ref_vcf) or args.phased_ref_vcf):
+        if not (
+            (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            or (args.run_eagle and (args.ref_vcf or args.split_phased_vcf))
+            or (args.phased_cohort_vcf and args.split_phased_vcf)
+            or args.phased_ref_vcf
+        ):
             parser.error(
-                "Need to specify either reference vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --reference-vcf or --phased-reference-vcf)."
+                "Need to specify either reference vcf for eagle to run or pass a phased cohort vcf for RFMix to run (--run-eagle and --reference-vcf or --phased-reference-vcf)."
             )
         if not args.genetic_map:
             parser.error(
@@ -61,9 +68,12 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
             )
 
     if args.run_tractor:
-        if not ((args.run_eagle and args.sample_vcf) or args.phased_sample_vcf):
+        if not (
+            (args.run_eagle and args.cohort_vcf and args.split_phased_vcf)
+            or args.phased_cohort_vcf
+        ):
             parser.error(
-                "Need to specify either sample vcf for eagle to run or pass a phased sample vcf for RFMix to run (--run-eagle and --sample-vcf or --phased-sample-vcf)."
+                "Need to specify either cohort vcf for eagle to run or pass a phased cohort vcf for RFMix to run (--run-eagle and --cohort-vcf or --phased-cohort-vcf)."
             )
         if not (args.run_rfmix or args.run_xgmix) and not args.msp_file:
             parser.error(
@@ -71,109 +81,66 @@ def check_args(parser: argparse.ArgumentParser(), args: Any) -> None:
             )
         if not args.n_ancs:
             parser.error(
-                "Need to specify either number of continental ancestries within RFMix and phased sample VCF."
+                "Need to specify either number of continental ancestries within RFMix and phased cohort VCF."
             )
 
 
 def split_vcf(
-    meta_table_path: str, sample_list_path: str, vcf_path: str, output_prefix: str
+    batch: hb.Batch,
+    phased_vcf: str,
+    meta_table: str,
+    contig: str,
+    sample_type: str,
+    region: str = "us-central1",
+    mem: str = "highmem",
+    storage: str = "100G",
+    cpu: int = 16,
+    image: str = "gcr.io/broad-mpg-gnomad/tgg-methods-vm:latest",
 ) -> hb.job.Job:
     """
     Subset a VCF based on a provided sample list and process it using Hail Batch.
 
-    :param meta_table_path: Path to the meta table.
-    :param sample_list_path: Path to the sample list.
-    :param vcf_path: Path to the input VCF file.
-    :param output_prefix: Prefix for the output files.
-    :return: Hail Batch job object.
+    :param meta_table: Path to the meta table for samples to subset to.
+    :param phased_vcf: Path to the input VCF file.
+    :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param sample_type: Type of samples to subset to, i.e. cohort or reference.
+    :param region: Region to run the job in.
+    :param mem: Hail batch job memory, defaults to "highmem".
+    :param storage: Hail batch job storage, defaults to "100G".
+    :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
+    :param image: Docker image for eagle job, defaults to "gcr.io/broad-mpg-gnomad/lai_phasing:latest".
+    :return: Batch job.
     """
-    # Step 1: Update package lists and install vcftools
-    subprocess.run(["sudo", "apt", "update"], check=True)
-    subprocess.run(["sudo", "apt", "install", "vcftools", "-y"], check=True)
+    split = batch.new_job(name="Run split_vcf")
+    split.regions([region])
+    split.spot(False)
+    split.image(image)
+    split.memory(mem)
+    split.storage(storage)
+    split.cpu(cpu)
+    split.declare_resource_group(
+        # ofile={"vcf.gz": "{root}.vcf.gz", "vcf.gz.tbi": "{root}.vcf.gz.tbi"}
+        ofile={"vcf.gz": "{root}.vcf.gz"}
+    )  # using recode on this works if we arent piping to gzip
 
-    # Step 2: Load the meta table
-    meta = hl.read_table(meta_table_path)
-
-    # Define lists to store sample IDs for cohort and reference panels
-    cohort_samples = []
-    reference_samples = []
-
-    # Load the sample list
-    with hl.hadoop_open(sample_list_path, "r") as f:
-        sample_list = [line.strip() for line in f]
-
-    # Iterate over each row in the meta table
-    for row in meta.collect():
-        # Check if the sample ID is in the sample list
-        if row.s in sample_list:
-            # Access the subsets and project_meta fields
-            subsets = row.subsets
-            project_meta = row.project_meta
-
-            # Determine if the sample belongs to the cohort or reference group
-            if (subsets.hgdp or subsets.tgp) and (
-                project_meta.project_subpop == "ASW"
-                or project_meta.project_subpop == "ACB"
-            ):
-                cohort_samples.append(row.s)
-            elif (subsets.hgdp or subsets.tgp) and (
-                project_meta.project_subpop != "ASW"
-                or project_meta.project_subpop != "ACB"
-            ):
-                reference_samples.append(row.s)
-            elif not (subsets.hgdp or subsets.tgp):
-                cohort_samples.append(row.s)
-
-    # Step 3: Subset VCF for cohort samples
-    cohort_sample_names_file = f"{output_prefix}_cohort_sample_names.txt"
-    with open(cohort_sample_names_file, "w") as f:
-        f.write("\n".join(cohort_samples))
-
-    vcf_subset_cohort_command = f"vcftools --gzvcf {vcf_path} --keep {cohort_sample_names_file} --recode --out {output_prefix}_subset_cohort"
-    subprocess.run(vcf_subset_cohort_command, shell=True)
-
-    # Subset VCF for reference samples
-    reference_sample_names_file = f"{output_prefix}_reference_sample_names.txt"
-    with open(reference_sample_names_file, "w") as f:
-        f.write("\n".join(reference_samples))
-
-    vcf_subset_reference_command = f"vcftools --gzvcf {vcf_path} --keep {reference_sample_names_file} --recode --out {output_prefix}_subset_reference"
-    subprocess.run(vcf_subset_reference_command, shell=True)
-
-    # Step 4: Initialize a Hail Batch instance
-    batch = hb.Batch(name="Split VCF")
-
-    # Step 5: Define the parameters for the split_vcf function
-    # assuming contig is not needed for split_vcf function?
-
-    # Step 6: Call the split_vcf function with the specified parameters
-    split_vcf_job = batch.new_job(name="Run split_vcf")
-    split_vcf_job.image(
-        "gcr.io/broad-mpg-gnomad/lai_phasing:latest"
-    )  # Set Docker image - I just put this as a placeholder
-    split_vcf_job.memory("highmem")  # Set memory requirement
-    split_vcf_job.storage("100G")  # Set storage requirement
-    split_vcf_job.cpu(8)  # Set CPU requirement
-
+    # Pipe to gzip and index the VCF by vcftools
     # Command to execute the split_vcf function
-    split_vcf_command = f"""
-    python -c "
-    from __main__ import split_vcf
-    split_vcf('{meta_table_path}', '{sample_list_path}', '{vcf_path}', '{output_prefix}')
-    "
-    """
-    split_vcf_job.command(split_vcf_command)
+    cmd = f"""vcftools --gzvcf {phased_vcf} \
+        --keep {meta_table} \
+        --recode \
+        --stdout | gzip -c > {split.ofile['vcf.gz']}
 
-    # Step 7: Submit the batch job
-    split_vcf_job.run()
+        """
+    split.command(cmd)
 
-    return split_vcf_job
+    return split
 
 
 def eagle(
     batch: hb.Batch,
     vcf: str,
     contig: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
@@ -185,6 +152,7 @@ def eagle(
     :param batch: Hail batch object.
     :param vcf: VCF to phase.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param region: Region to run Eagle in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -192,6 +160,8 @@ def eagle(
     :return: Batch job.
     """
     e = batch.new_job(name=f"Eagle - chr{contig}")
+    e.regions([region])
+    e.spot(False)
     e.memory(mem)
     e.storage(storage)
     e.cpu(cpu)
@@ -213,32 +183,38 @@ def eagle(
 
 def rfmix(
     batch: hb.Batch,
-    sample_pvcf: str,
+    cohort_pvcf: str,
     ref_pvcf: str,
     contig: str,
     sample_map: str,
     rf_genetic_map: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
     image: str = "gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
+    em_iterations: int = None,
 ) -> hb.Batch.new_job:
     """
     Run RFMix2 on phased VCF.
 
     :param batch: Hail batch object.
-    :param sample_pvcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
+    :param cohort_pvcf: Phased cohort sample VCF from phasing tool like Eagle or SHAPEIT.
     :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or SHAPEIT.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
     :param rf_genetic_map: HapMap genetic map from SNP base pair positions to genetic coordinates in centimorgans.
+    :param region: Region to run RFMix in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
     :param image: RFMix Docker image, defaults to "gcr.io/broad-mpg-gnomad/lai_rfmix:latest".
+    :param em_iterations: Number of EM iterations to run, defaults to None.
     :return: Hail batch job.
     """
     r = batch.new_job(name=f"RFMix - chr{contig}")
+    r.regions([region])
+    r.spot(False)
     r.memory(mem)
     r.storage(storage)
     r.cpu(cpu)
@@ -246,19 +222,30 @@ def rfmix(
     r.declare_resource_group(
         ofile={"msp.tsv": "{root}.msp.tsv", "fb.tsv": "{root}.fb.tsv"}
     )
-
-    cmd = f"""
-    ./rfmix \
-        -f {sample_pvcf} \
-        -r {ref_pvcf} \
-        --chromosome=chr{contig} \
-        -m {sample_map} \
-        -g {rf_genetic_map} \
-        -n 5 \
-        -e 1 \
-        --reanalyze-reference \
-        -o {r.ofile}
-    """
+    if em_iterations:
+        cmd = f"""
+        ./rfmix \
+            -f {cohort_pvcf} \
+            -r {ref_pvcf} \
+            --chromosome=chr{contig} \
+            -m {sample_map} \
+            -g {rf_genetic_map} \
+            -n 5 \
+            -e {em_iterations} \
+            --reanalyze-reference \
+            -o {r.ofile}
+        """
+    else:
+        cmd = f"""
+        ./rfmix \
+            -f {cohort_pvcf} \
+            -r {ref_pvcf} \
+            --chromosome=chr{contig} \
+            -m {sample_map} \
+            -g {rf_genetic_map} \
+            -n 5 \
+            -o {r.ofile}
+        """
 
     r.command(cmd)
     return r
@@ -266,11 +253,12 @@ def rfmix(
 
 def xgmix(
     batch: hb.Batch,
-    sample_pvcf: str,
+    cohort_pvcf: str,
     xg_genetic_map: str,
     contig: str,
     ref_pvcf: str,
     sample_map: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "100G",
     cpu: int = 16,
@@ -280,11 +268,12 @@ def xgmix(
     Run XGMix on phased VCF.
 
     :param batch: Hail batch object.
-    :param sample_pvcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
+    :param cohort_pvcf: Phased cohort sample VCF from phasing tool like Eagle or SHAPEIT.
     :param xg_genetic_map: HapMap genetic map from SNP base pair positions to genetic coordinates in cM.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param ref_pvcf: Phased reference sample VCF from phasing tool like Eagle or SHAPEIT.
     :param sample_map: TSV file containing a mapping from sample IDs to ancestral populations, i.e. NA12878    EUR.
+    :param region: Region to run XGMix in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "100G".
     :param cpu: Number of CPUs requested, defaults to 16.
@@ -292,6 +281,7 @@ def xgmix(
     :return: Hail batch job.
     """
     x = batch.new_job(name=f"XGMix - chr{contig}")
+    x.regions([region])
     x.memory(mem)
     x.storage(storage)
     x.cpu(cpu)
@@ -301,7 +291,7 @@ def xgmix(
     )
 
     cmd = f"""
-    python3 XGMIX.py {sample_pvcf} {xg_genetic_map} /io/tmp/xgmix/output chr{contig} False {ref_pvcf} {sample_map}
+    python3 XGMIX.py {cohort_pvcf} {xg_genetic_map} /io/tmp/xgmix/output chr{contig} False {ref_pvcf} {sample_map}
     ln -s /io/tmp/xgmix/output/output.msp.tsv {x.ofile['msp.tsv']}
     ln -s /io/tmp/xgmix/output/output.fb.tsv {x.ofile['fb.tsv']}
     """
@@ -313,11 +303,12 @@ def xgmix(
 def tractor(
     batch: hb.Batch,
     msp: str,
-    pvcf: str,
+    cohort_pvcf: str,
     n_ancs: int,
     input_zipped: bool,
     zip_output: bool,
     contig: str,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "200G",
     cpu: int = 16,
@@ -328,11 +319,12 @@ def tractor(
 
     :param batch: Hail batch object.
     :param msp: MSP tsv file from LAI tool like RFMix2 or XGMix.
-    :param vcf: Phased sample VCF from phasing tool like Eagle or SHAPEIT.
+    :param vcf: Phased cohort sample VCF from phasing tool like Eagle or SHAPEIT.
     :param n_ancs: Number of ancestral populations within the MSP file.
     :param input_zipped: Whether the input VCF file is zipped or not, i.e. ends in vcf.gz.
     :param zip_output: Whether to zip the tool's output files.
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
+    :param region: Region to run Tractor in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -340,6 +332,8 @@ def tractor(
     :return: Hail Batch job.
     """
     t = batch.new_job(name=f"Tractor - chr{contig}")
+    t.regions([region])
+    t.spot(False)
     t.memory(mem)
     t.storage(storage)
     t.cpu(cpu)
@@ -347,12 +341,12 @@ def tractor(
     rg_def = {}
     file_extension = ".gz" if zip_output else ""
     for i in range(n_ancs):
-        rg_def[f"vcf{i}{file_extension}"] = f"{{root}}.anc{i}.vcf{file_extension}"
+        rg_def[f"anc{i}.vcf{file_extension}"] = f"{{root}}.anc{i}.vcf{file_extension}"
         rg_def[
-            f"dos{i}.txt{file_extension}"
+            f"anc{i}.dosage.txt{file_extension}"
         ] = f"{{root}}.anc{i}.dosage.txt{file_extension}"
         rg_def[
-            f"ancdos{i}.txt{file_extension}"
+            f"anc{i}.hapcount.txt{file_extension}"
         ] = f"{{root}}.anc{i}.hapcount.txt{file_extension}"
 
     t.declare_resource_group(ofile=rg_def)
@@ -360,7 +354,7 @@ def tractor(
     zip_output = "--zip-output" if zip_output else ""
 
     cmd = f"""
-    python3 ExtractTracts.py --msp {msp} --vcf {pvcf} --num-ancs={n_ancs} {input_zipped} {zip_output} --output-path={t.ofile}
+    python3 ExtractTracts.py --msp {msp} --vcf {cohort_pvcf} --num-ancs={n_ancs} {input_zipped} {zip_output} --output-path={t.ofile}
     """
 
     t.command(cmd)
@@ -375,10 +369,11 @@ def generate_lai_vcf(
     contig: str,
     mt_path_for_adj: str,
     add_gnomad_af: bool,
+    region: str = "us-central1",
     mem: str = "highmem",
     storage: str = "200G",
     cpu: int = 16,
-    image: str = "gcr.io/broad-mpg-gnomad/lai_vcf:latest",
+    image: str = "us-central1-docker.pkg.dev/broad-mpg-gnomad/images/lai_vcf:latest",
 ) -> hb.Batch.new_job:
     """
     Run generate_output_vcf.py script.
@@ -390,6 +385,7 @@ def generate_lai_vcf(
     :param contig: Which chromosome the VCF contains. This must be a single chromosome.
     :param mt_path_for_adj: Path to MT to filter to high quality genotypes before calculating AC.
     :param add_gnomad_af: Whether to add gnomAD's population AFs for AMR, NFE, AFR, and EAS.
+    :param region: Region to run Tractor in.
     :param mem: Hail batch job memory, defaults to "highmem".
     :param storage: Hail batch job storage, defaults to "200G".
     :param cpu: The number of CPUs requested which is also used for threading, defaults to 16.
@@ -397,10 +393,13 @@ def generate_lai_vcf(
     :return: Hail Batch job.
     """
     v = batch.new_job(name=f"Generate final VCF - chr{contig}")
+    v.regions([region])
+    v.spot(False)
     v.memory(mem)
     v.storage(storage)
     v.cpu(cpu)
     v.image(image)
+    v.env('PYSPARK_SUBMIT_ARGS', '--driver-memory 110g --executor-memory 110g pyspark-shell')
     v.declare_resource_group(ofile={"vcf.bgz": "{root}_lai_annotated.vcf.bgz"})
 
     if mt_path_for_adj:
@@ -419,11 +418,12 @@ def main(args):
 
     The pipeline has four steps that can run independently or in series using either user input or a previous step's output:
 
-        - Phase a sample VCF and a reference VCF using Eagle.
-        - Run a local ancestry tool, either RFMix or XGMix, on phased sample VCF.
-        - Run Tractor to extract ancestral components from the phased VCF and generate a VCF, dosage counts, and haplotype counts per ancestry.
+        - Phase a cohort VCF and a reference VCF using Eagle.
+        - Run a local ancestry tool, either RFMix or XGMix, on phased cohort VCF.
+        - Run Tractor to extract ancestral components from the phased cohort VCF and generate a VCF, dosage counts, and haplotype counts per ancestry.
         - Generate a single VCF with ancestry-specific call statistics (AC, AN, AF).
     """
+    region = args.batch_region
     contig = args.contig
     contig = contig[3:] if contig.startswith("chr") else contig
     logger.info("Running gnomAD LAI on chr%s", contig)
@@ -431,13 +431,14 @@ def main(args):
         output_path = args.output_bucket
 
         if args.run_eagle:
-            if args.sample_vcf:
-                logger.info("Running eagle on sample VCF...")
-                vcf = b.read_input(args.sample_vcf)
+            if args.cohort_vcf:
+                logger.info("Running eagle on cohort VCF...")
+                vcf = b.read_input(args.cohort_vcf)
                 e = eagle(
                     b,
                     vcf,
                     contig,
+                    region=region,
                     mem=args.eagle_mem,
                     storage=args.eagle_storage,
                     cpu=args.eagle_cpu,
@@ -454,6 +455,7 @@ def main(args):
                     b,
                     ref_vcf,
                     contig,
+                    region=region,
                     mem=args.eagle_mem,
                     storage=args.eagle_storage,
                     cpu=args.eagle_cpu,
@@ -464,33 +466,77 @@ def main(args):
                     dest=f"{output_path}chr{contig}/eagle/phased_reference_chr{contig}",
                 )
 
+        if args.split_phased_vcf:
+            logger.info("Splitting phased VCF...")
+            # Define lists to store sample IDs for cohort and reference panels
+            ref_meta_table = b.read_input(args.ref_meta_for_split)
+            cohort_meta_table = b.read_input(args.cohort_meta_for_split)
+
+            phased_vcf = (
+                b.read_input(args.phased_cohort_vcf)
+                if args.phased_cohort_vcf
+                else e.ofile["vcf.gz"]
+            )
+
+            split_cohort_vcf = split_vcf(
+                b,
+                phased_vcf,
+                cohort_meta_table,
+                region=region,
+                contig=contig,
+                sample_type="cohort",
+            )
+            b.write_output(
+                split_cohort_vcf.ofile,
+                dest=f"{output_path}chr{contig}/split_phased_vcf/cohort",
+            )
+
+            split_ref_vcf = split_vcf(
+                b,
+                phased_vcf,
+                ref_meta_table,
+                region=region,
+                contig=contig,
+                sample_type="reference",
+            )
+            b.write_output(
+                split_ref_vcf.ofile,
+                dest=f"{output_path}chr{contig}/split_phased_vcf/reference",
+            )
+
         if args.run_rfmix or args.run_xgmix:
             sample_map = b.read_input(args.pop_sample_map)
             genetic_map = b.read_input(args.genetic_map)
-            phased_ref_vcf = (
-                b.read_input(args.phased_ref_vcf)
-                if args.phased_ref_vcf
-                else ref_e.ofile["vcf.gz"]
-            )
-            phased_sample_vcf = (
-                b.read_input(args.phased_sample_vcf)
-                if args.phased_sample_vcf
-                else e.ofile["vcf.gz"]
-            )
+
+            if args.phased_ref_vcf:
+                phased_ref_vcf = b.read_input(args.phased_ref_vcf)
+            elif args.split_phased_vcf:
+                phased_ref_vcf = split_ref_vcf.ofile["vcf.gz"]
+            else:
+                phased_ref_vcf = ref_e.ofile["vcf.gz"]
+
+            if args.phased_cohort_vcf:
+                phased_cohort_vcf = b.read_input(args.phased_cohort_vcf)
+            elif args.split_phased_vcf:
+                phased_cohort_vcf = split_cohort_vcf.ofile["vcf.gz"]
+            else:
+                phased_cohort_vcf = e.ofile["vcf.gz"]
 
             if args.run_rfmix:
                 logger.info("Running Local Ancestry Inference tool RFMix v2...")
                 lai = rfmix(
                     b,
-                    phased_sample_vcf,
+                    phased_cohort_vcf,
                     phased_ref_vcf,
                     contig,
                     sample_map,
                     genetic_map,
+                    region=region,
                     mem=args.lai_mem,
                     storage=args.lai_storage,
                     cpu=args.lai_cpu,
                     image=args.rfmix_image,
+                    em_iterations=args.em_iterations,
                 )
                 b.write_output(
                     lai.ofile, dest=f"{output_path}chr{contig}/rfmix/output/chr{contig}"
@@ -499,11 +545,12 @@ def main(args):
                 logger.info("Running Local Ancestry Inference tool XGMix...")
                 lai = xgmix(
                     b,
-                    phased_sample_vcf,
+                    phased_cohort_vcf,
                     genetic_map,
                     contig,
                     phased_ref_vcf,
                     sample_map,
+                    region=region,
                     mem=args.lai_mem,
                     storage=args.lai_storage,
                     cpu=args.lai_cpu,
@@ -521,19 +568,20 @@ def main(args):
                 if args.msp_file
                 else lai.ofile
             )
-            phased_sample_vcf = (
-                b.read_input_group(**{"vcf.gz": args.phased_sample_vcf})
-                if args.phased_sample_vcf
+            phased_cohort_vcf = (
+                b.read_input_group(**{"vcf.gz": args.phased_cohort_vcf})
+                if args.phased_cohort_vcf
                 else e.ofile
             )
             t = tractor(
                 b,
                 msp_file,
-                phased_sample_vcf,
+                phased_cohort_vcf,
                 args.n_ancs,
                 input_zipped=True,
                 zip_output=args.zip_tractor_output,
                 contig=contig,
+                region=region,
                 mem=args.tractor_mem,
                 storage=args.tractor_storage,
                 cpu=args.tractor_cpu,
@@ -583,8 +631,10 @@ def main(args):
 if __name__ == "__main__":
     p = init_arg_parser(
         default_cpu=16,
-        default_billing_project="broad-mpg-gnomad",
+        default_billing_project="gnomad-production",
         default_temp_bucket="gnomad-batch",
+        # default_billing_project="gnomad-lai",
+        # default_temp_bucket="my-auto-delete-bucket/hail-query-temporaries",
     )
     multi_args = p.add_argument_group(
         "Multi-step use", "Arguments used by multiple steps"
@@ -600,14 +650,19 @@ if __name__ == "__main__":
         help="Google bucket path with final / included. Each steps' result will be written to within a chromosome subfolder here.",
     )
     multi_args.add_argument(
-        "--phased-sample-vcf",
+        "--phased-cohort-vcf",
         required=False,
-        help="Zipped VCF of phased samples, needed for LAI and/or Tractor runs.",
+        help="Zipped VCF of phased cohort samples, needed for LAI and/or Tractor runs.",
     )
     multi_args.add_argument(
         "--msp-file",
         required=False,
         help="Output from LAI program like RFMix_v2. Needed for Tractor and/or VCF generation.",
+    )
+    multi_args.add_argument(
+        "--batch-region",
+        help="Region to run batch in, defaults to 'us-central1'.",
+        default="us-central1",
     )
     phasing_args = p.add_argument_group("Phasing", "Arguments for phasing samples")
     phasing_args.add_argument(
@@ -632,7 +687,7 @@ if __name__ == "__main__":
         help="CPU for eagle batch job.",
     )
     phasing_args.add_argument(
-        "--sample-vcf",
+        "--cohort-vcf",
         required=False,
         help="Google bucket path to sample VCF to phase.",
     )
@@ -645,6 +700,25 @@ if __name__ == "__main__":
         "--eagle-image",
         help="Docker image for Eagle.",
         default="gcr.io/broad-mpg-gnomad/lai_phasing:latest",
+    )
+    splitting_args = p.add_argument_group(
+        "Splitting", "Arguments for splitting phased VCF by cohort and reference"
+    )
+    splitting_args.add_argument(
+        "--ref-meta-for-split",
+        required=False,
+        help="TSV of reference samples to split phased VCF.",
+    )
+    splitting_args.add_argument(
+        "--cohort-meta-for-split",
+        required=False,
+        help="TSV of cohort samples to split phased VCF.",
+    )
+    splitting_args.add_argument(
+        "--split-phased-vcf",
+        required=False,
+        action="store_true",
+        help="Whether to split phased VCF by cohort and reference.",
     )
     lai_args = p.add_argument_group(
         "Local Ancestry Inference",
@@ -680,6 +754,12 @@ if __name__ == "__main__":
         "--rfmix-image",
         help="Docker image for RFMix_v2.",
         default="gcr.io/broad-mpg-gnomad/lai_rfmix:latest",
+    )
+    lai_args.add_argument(
+        "--em-iterations",
+        help="Number of EM iterations to run in RFMix2.",
+        default=None,
+        type=int,
     )
     lai_args.add_argument(
         "--run-xgmix",
@@ -775,7 +855,7 @@ if __name__ == "__main__":
     vcf_args.add_argument(
         "--vcf-image",
         help="Docker image for VCF generation.",
-        default="gcr.io/broad-mpg-gnomad/lai_vcf:latest",
+        default="us-central1-docker.pkg.dev/broad-mpg-gnomad/images/lai_vcf:latest",
     )
     args = p.parse_args()
     check_args(p, args)
