@@ -571,7 +571,7 @@ def main(args):
             phased_cohort_vcf = (
                 b.read_input_group(**{"vcf.gz": args.phased_cohort_vcf})
                 if args.phased_cohort_vcf
-                else e.ofile
+                else split.ofile
             )
             t = tractor(
                 b,
