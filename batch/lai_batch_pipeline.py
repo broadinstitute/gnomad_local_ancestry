@@ -599,12 +599,9 @@ def main(args):
             rg_def = {}
             if args.tractor_output:
                 for i in range(args.n_ancs):
-                    rg_def[
-                        f"anc{i}.dosage.txt"
-                    ] = f"{args.tractor_output}.dos{i}.txt{'.gz' if args.zip_tractor_output else ''}"
-                    rg_def[
-                        f"anc{i}.hapcount.txt"
-                    ] = f"{args.tractor_output}.ancdos{i}.txt{'.gz' if args.zip_tractor_output else ''}"
+                    rg_def[f"anc{i}.vcf.gz"] = f"{args.tractor_output}.anc{i}.vcf.gz"
+                    rg_def[f"anc{i}.dosage.txt.gz"] = f"{args.tractor_output}.anc{i}.dosage.txt.gz"
+                    rg_def[f"anc{i}.hapcount.txt.gz"] = f"{args.tractor_output}.anc{i}.hapcount.txt.gz"
             tractor_output = (
                 b.read_input_group(**rg_def) if args.tractor_output else t.ofile
             )
