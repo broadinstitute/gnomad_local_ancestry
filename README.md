@@ -112,7 +112,7 @@ For our Hail Batch Python pipeline, refer to:
 
 ## **5. Citation**
 
-If you use this pipeline in your research, please cite[:](https://www.biorxiv.org/content/10.1101/2024.10.30.620961v1)
+If you use this pipeline in your research, please cite:
 
 > [Kore, P., Wilson, M. et al., Improved Allele Frequencies in gnomAD through Local Ancestry Inference](https://www.biorxiv.org/content/10.1101/2024.10.30.620961v1).
 
