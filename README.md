@@ -85,7 +85,7 @@ python3 extract_tracts.py \
 
 ### **Step 4: Generating a Joint VCF with Ancestry-Specific Annotations**
 
-The `generate_lai_vcf` function calls **generate\_output\_vcf.py**, a standalone Python/Hail script. **Batch processing cannot be used** for this function, but `generate_lai_vcf` remains useful for extracting LAI-informed VCF outputs. This script outputs an annotated VCF containing ancestry-specific allele frequency data:
+The `generate_lai_vcf` function calls **generate\_output\_vcf.py**, a standalone Python/Hail script. This script outputs an annotated VCF containing ancestry-specific allele frequency data:
 
 ```bash
 python3 generate_output_vcf.py \
