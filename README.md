@@ -1,6 +1,8 @@
 # gnomAD Local Ancestry Inference (LAI) Pipeline
 
-This repository provides a streamlined pipeline for performing **Local Ancestry Inference (LAI)** using gnomAD samples. Due to the large scale of gnomAD, we implemented this pipeline using the **Hail Batch Python module**. The pipeline leverages **Eagle for phasing**, **RFMix v2 for ancestry painting**, **Tractor for extracting ancestry-specific allele frequencies**, and **generate\_output\_vcf.py** for generating a joint VCF with ancestry-specific allele count (AC), allele number (AN), and allele frequency (AF) annotations. Below, we outline the steps to run this pipeline on your dataset using Hail/Python scripts.
+This repository provides a streamlined pipeline for performing **Local Ancestry Inference (LAI)** using gnomAD samples. Due to the large scale of gnomAD, we implemented this pipeline using the **Hail Batch Python module** which is still in beta testing and exclusive to the Broad however the tools used within the pipeline are all publicly available. 
+
+The pipeline leverages **Eagle for phasing**, **RFMix v2 for ancestry painting**, **Tractor for extracting ancestry-specific allele frequencies**, and **generate\_output\_vcf.py** for generating a joint VCF with ancestry-specific allele count (AC), allele number (AN), and allele frequency (AF) annotations. Below, we outline the steps to run this pipeline on your dataset using Hail/Python scripts.
 
 ---
 
