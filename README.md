@@ -27,7 +27,6 @@ This pipeline processes genomic data by:
 
 ```bash
 git clone https://github.com/broadinstitute/gnomad_local_ancestry.git
-cd gnomad_local_ancestry/batch
 ```
 
 ### **Step 2: Install Dependencies**
