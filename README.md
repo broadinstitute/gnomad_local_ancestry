@@ -115,6 +115,6 @@ For our Hail Batch Python pipeline, refer to:
 
 If you use this pipeline in your research, please cite:
 
-> [Kore, P., Wilson, M. et al., Improved Allele Frequencies in gnomAD through Local Ancestry Inference](https://www.biorxiv.org/content/10.1101/2024.10.30.620961v1).
+> [Kore, P., Wilson, M. et al., Improved Allele Frequencies in gnomAD through Local Ancestry Inference](https://www.nature.com/articles/s41467-025-63340-2#citeas).
 
 Please direct questions to [pragati.kore@bcm.edu](mailto\:pragati.kore@bcm.edu) or [mwilson@broadinstitute.org](mailto\:mwilson@broadinstitute.org).
